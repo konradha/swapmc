@@ -334,7 +334,7 @@ def run():
 
     L = Lattice(beta, n, n_1, G, [0,0,1])
 
-    nsteps = 100
+    nsteps = 1000
 
 
     energies = list()
