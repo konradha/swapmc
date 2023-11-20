@@ -76,33 +76,41 @@ class Lattice:
         self.first_sites  = np.logical_not(np.ones(self.N, dtype=bool))
         self.second_sites = np.logical_not(np.ones(self.N, dtype=bool))
 
+
         # set up more data
         self._fill_lattice(self.vacant_sites, self.first_sites, self.second_sites)
 
-    def _local_energy(self, site: int):
+    def __local_energy(self, site: int):
         if not self.occupied[site]:
             return 0
+        #print(f"{site=}")
+        #print(f"{np.array(G[site, :].new().to_coo())=}")
+        #print(f"{self.occupied=}")
 
+        #print(f"{self.occupied.shape=}")
+        #import pdb; pdb.set_trace()
         connection = self.preferred_neighbors[1] if self.first_sites[site] else self.preferred_neighbors[2]
-        curr_connections = np.sum(np.array(np.logical_and(
-            (G[site, :].new().to_coo()), self.occupied), dtype=int))  # mask `sites` array
+        # self.occupied[np.array(G[site, :].new().to_coo()[0])] <- is this expression correct?
+        curr_connections = np.sum(self.occupied[np.array(G[site, :].new().to_coo()[0])])
+        #curr_connections = np.sum(np.array(np.logical_and(
+        #    np.array(G[site, :].new().to_coo()[0]), self.occupied), dtype=int))  # mask `sites` array
         return (curr_connections - connection) ** 2
 
     def _local_energy(self, occupied: np.array, site: int):
         if not occupied[site]:
             return 0
-
+        
         connection = self.preferred_neighbors[1] if self.first_sites[site] else self.preferred_neighbors[2]
-        curr_connections = np.sum(np.array(np.logical_and(
-            (G[site, :].new().to_coo()), occupied), dtype=int))  # mask `sites` array
+        #curr_connections = np.sum(np.array(np.logical_and(
+        #    np.array(G[site, :].new().to_coo()[0]), occupied), dtype=int))  # mask `sites` array
+        curr_connections = np.sum(occupied[np.array(G[site, :].new().to_coo()[0])])
+
         return (curr_connections - connection) ** 2
 
     def _fill_lattice(self, vacant_sites: np.array, sites_p1: np.array, sites_p2: np.array):
         aux1 = 0
         aux2 = 0
-        print(f"{aux1=} and {self.num_p1=}")
         while aux1 < self.num_p1:
-            print(np.where(vacant_sites)[0], "\n\n\n")
             site = np.random.choice(np.where(vacant_sites)[0])
             vacant_sites[site] = False
             sites_p1[site] = True
@@ -114,10 +122,10 @@ class Lattice:
             aux2 += 1
 
         self.occupied = np.logical_or(self.first_sites, self.second_sites)
-        self.sites_energies = np.array(self.N, dtype=int)
-
+        self.sites_energies = np.zeros(self.N, dtype=int)
+        
         for i in range(self.N):
-            self.sites_energies[i] = self._local_energy(i)
+            self.sites_energies[i] = self.__local_energy(i)
 
     def mc_step(self):
 
@@ -128,10 +136,11 @@ class Lattice:
         fst_cpy = deepcopy(self.first_sites)
         snd_cpy = deepcopy(self.second_sites)
         occ_cpy = deepcopy(self.occupied)
-        eny_cpy = deepcopy(self.energies)
+        eny_cpy = deepcopy(self.sites_energies)
 
-        mv = np.random.choice(np.where(self.occupied))
-        mv_to = np.random.choice(np.where(np.logical_not(self.occupied)))
+        
+        mv    = np.random.choice(np.where(self.occupied)[0])
+        mv_to = np.random.choice(np.where(np.logical_not(self.occupied))[0]) 
         if fst_cpy[mv]:
             fst_cpy[mv] = False
             fst_cpy[mv_to] = True
@@ -145,24 +154,27 @@ class Lattice:
 
         eny_cpy[mv] = 0
         neighbors = np.where(
-            np.array(self.G[mv, :].new().to_coo()))  # get indices
+            np.array(self.G[mv, :].new().to_coo())[0])[0]  # get indices
+        #print(f"neighbors from: {(np.array(self.G[mv, :].new().to_coo()))=}")
         new_nn_e1 = 0
         for n in neighbors:
+            #print(f"{neighbors=}")
             e = self._local_energy(occ_cpy, n)
             eny_cpy[n] = e
             new_nn_e1 += e
 
         new_neighbors = np.where(
-            np.array(self.G[mv_to, :].new().to_coo()))  # get indices
+            np.array(self.G[mv_to, :].new().to_coo()[0]))[0]  # get indices
+        new_nn_e2 = 0
         for n in new_neighbors:
             e = self._local_energy(occ_cpy, n)
             eny_cpy[n] = e
             new_nn_e2 += e
 
         # neighboring energies
-        E1 = self.energies[mv] + \
+        E1 = self.sites_energies[mv] + \
             np.sum(
-                np.array(self.occupied[self.G[mv, :].new().to_coo()], dtype=int))
+                self.occupied[np.array(self.G[mv, :].new().to_coo()[0])])
         E2 = eny_cpy[mv_to] + new_nn_e1 + new_nn_e2
         dE = E2 - E1
 
@@ -171,17 +183,17 @@ class Lattice:
             self.first_sites = fst_cpy
             self.second_sites = snd_cpy
             self.occupied = occ_cpy
-            self.energies = eny_cpy
+            self.sites_energies = eny_cpy
 
     def swap_step(self):
-        s1 = np.random.choice(np.where(self.first_sites))
-        s2 = np.random.choice(np.where(self.second_sites))
+        s1 = np.random.choice(np.where(self.first_sites)[0])
+        s2 = np.random.choice(np.where(self.second_sites)[0])
 
         vac_cpy = deepcopy(self.vacant_sites)
         fst_cpy = deepcopy(self.first_sites)
         snd_cpy = deepcopy(self.second_sites)
         occ_cpy = deepcopy(self.occupied)
-        eny_cpy = deepcopy(self.energies)
+        eny_cpy = deepcopy(self.sites_energies)
 
         fst_cpy[s1] = False
         fst_cpy[s2] = True
@@ -192,32 +204,32 @@ class Lattice:
         eny_cpy[s1] = self._local_energy(occ_cpy, s1)
         eny_cpy[s2] = self._local_energy(occ_cpy, s2)
 
-        neighbors = np.where(
-            np.array(self.G[s1, :].new().to_coo()))  # get indices
+        neighbors = np.array(self.G[s1, :].new().to_coo()[0])  # get indices
+        #import pdb; pdb.set_trace()
         new_nn_e1 = 0
         for n in neighbors:
             e = self._local_energy(occ_cpy, n)
             eny_cpy[n] = e
             new_nn_e1 += e
 
-        new_neighbors = np.where(
-            np.array(self.G[s2, :].new().to_coo()))  # get indices
+        new_neighbors = np.array(self.G[s2, :].new().to_coo()[0])  # get indices
+        new_nn_e2 = 0
         for n in new_neighbors:
             e = self._local_energy(occ_cpy, n)
             eny_cpy[n] = e
             new_nn_e2 += e
 
-        E1 = self.energies[s1] + \
+        E1 = self.sites_energies[s1] + \
             np.sum(
-                np.array(self.occupied[self.G[mv, :].new().to_coo()], dtype=int))
+                self.occupied[np.array(self.G[s2, :].new().to_coo()[0])])
         E2 = new_nn_e1 + new_nn_e2 + eny_cpy[s1] + eny_cpy[s2]
-
+        dE = E2 - E1
         if np.random.random() < np.exp(- self.beta * dE):
             self.vacant_sites = vac_cpy
             self.first_sites = fst_cpy
             self.second_sites = snd_cpy
             self.occupied = occ_cpy
-            self.energies = eny_cpy
+            self.sites_energies = eny_cpy
 
     def plot_config(self, ax=None):
         if ax is None:
@@ -245,11 +257,18 @@ class Lattice:
 
         return ax
 
+beta = 2.0
+n = 0.45
+n_1 = 0.8 * n
+l = 4
+
+energies = None
 
 
-G = rect_lattice(5, 5)
+G = rect_lattice(l*l, l*l)
 
-L = Lattice(.33, 5, 5, G)
+L = Lattice(beta, n, n_1, G, [0,0,1])
+L.swap_step()
 
 # print(G)
 #g.viz.draw(G)
