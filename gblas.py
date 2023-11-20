@@ -1,10 +1,18 @@
 import graphblas as g
+import matplotlib; matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from enum import Enum
 import numpy as np
 from typing import Dict, List, Tuple
 from copy import deepcopy
 import networkx as nx
+from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.patches as mpatches
+c1 = '#000000'
+c2 = '#3581DD'
+colors = ['#f0f2f5', c1, c2]
+cmap_name = 'custom_colormap'
+custom_cmap = LinearSegmentedColormap.from_list(cmap_name, colors)
 
 
 def rect_lattice(m: int, n: int) -> g.Matrix:
@@ -235,38 +243,81 @@ class Lattice:
     def plot_config(self, ax=None):
         if ax is None:
             fig, ax = plt.subplots()
-        g.viz.draw(G)
-
+        adj = self.G.to_dense(fill_value=False)
+        G = nx.from_numpy_array(adj) 
         node_colors = []
         for i in range(self.N):
-            if self.first_sites[i]: node_colors.append(100)
-            elif self.second_sites[i]: node_colors.append(300) 
-            else: node_colors.append(0)
-
-        #pos = dict(zip(self.G.cols(), np.array(list(self.G.nodes()))))
-
-        #nx.draw(self.G, pos, node_color=node_colors,
-        #cmap=custom_cmap, node_size=75, vmin=0, vmax=2, ax=ax)
-
-        nx.draw(self.G,  node_color=node_colors,
-        node_size=75, vmin=0, vmax=2, ax=ax)
-
-        p1_patch = mpatches.Patch(color=c1, label=f"{self.pref_conn[0]}")
-        p2_patch = mpatches.Patch(color=c2, label=f"{self.pref_conn[1]}")
-
-
-        ax.legend(handles=[p1_patch, p2_patch], title="preferred valence",
-                  loc='upper center', bbox_to_anchor=(0.5, -0.02),
-                  fancybox=True, shadow=True, ncol=len(self.pref_conn))
+            if self.first_sites[i]: node_colors.append('blue')
+            elif self.second_sites[i]: node_colors.append('red') 
+            else: node_colors.append('grey')
+        #nx.draw(G, node_color=node_colors, with_labels=True)
+        lattice_size = int(np.sqrt(self.N))
+        x = [i %   lattice_size for i in range(self.N)]
+        y = [i //  lattice_size for i in range(self.N)]
+        ax.scatter(x, y, c=node_colors)
 
         return ax
+
+    def simulate_with_animation(self, nsteps=1000):
+        import matplotlib.animation as animation
+        adj = self.G.to_dense(fill_value=False)
+        G = nx.from_numpy_array(adj) 
+        self.node_colors = list()
+        self.swap = list()
+        
+        def new_node_colors():
+            node_colors = []
+            for i in range(self.N):
+                if self.first_sites[i]: node_colors.append('blue')
+                elif self.second_sites[i]: node_colors.append('red') 
+                else: node_colors.append('grey')
+            return node_colors
+        grid_size = int(np.sqrt(self.N))
+        x = [i %  grid_size for i in range(self.N)]
+        y = [i // grid_size for i in range(self.N)]
+        fig, ax = plt.subplots()
+
+        def update(i):
+            ax.clear()
+            node_colors = self.node_colors[i]
+            if self.swap[i-1] and not self.swap[i]:
+                ax.set_facecolor('.8')
+            elif not self.swap[i-1] and self.swap[i]: 
+                ax.set_facecolor('.83')
+            else:
+                ax.set_facecolor('.81')
+            
+            ax.set_aspect('equal')
+            ax.get_xaxis().set_visible(False)
+            ax.get_yaxis().set_visible(False)
+            scatter = ax.scatter(x, y, c=node_colors, s=30)
+
+
+            return scatter,
+
+
+        for _ in range(nsteps):
+            
+            self.mc_step()
+            if np.random.rand() <= .3:
+                self.swap_step()
+                self.swap.append(True)
+            else: self.swap.append(False)
+            self.node_colors.append(new_node_colors()) 
+            
+            #energies.append(
+            #            np.sum(L.sites_energies)
+            #            )
+        ani = animation.FuncAnimation(fig, update, frames=range(len(self.node_colors)), blit=True, interval=45) 
+        videowriter = animation.FFMpegWriter(bitrate=5000, fps=60)
+        ani.save(f"lattice_{self.N}.mp4", videowriter)
 
 
 def run_with_profiler():
     beta = 2.0
     n = 0.45
     n_1 = 0.8 * n
-    l = 5
+    l = 2
 
     import cProfile
     import pstats
@@ -327,23 +378,30 @@ def run():
     beta = 2.0
     n = 0.45
     n_1 = 0.8 * n
-    l = 5
+    l = 6
 
 
-    G = cubic_lattice(l*l, l*l, l*l)
+    G = rect_lattice(l*l, l*l, )
 
     L = Lattice(beta, n, n_1, G, [0,0,1])
 
-    nsteps = 1000
+    nsteps = 2500
+    L.simulate_with_animation(nsteps)
+    #ax = L.plot_config()
+    #plt.show()
+    
+    #energies = list()
+    #vertices_evolution = list()
+    #for _ in range(nsteps):
+    #    L.mc_step()
+    #    if np.random.rand() <= .3: L.swap_step()
+    #    energies.append(
+    #                np.sum(L.sites_energies)
+    #                )
+    #ax = L.plot_config()
+    #plt.show()
 
-
-    energies = list()
-    for _ in range(nsteps):
-        L.mc_step()
-        if np.random.rand() <= .3: L.swap_step()
-        energies.append(
-                    np.sum(L.sites_energies)
-                    )
+     
 
 
 if __name__ == '__main__':
