@@ -4,6 +4,7 @@ from enum import Enum
 import numpy as np
 from typing import Dict, List, Tuple
 from copy import deepcopy
+import networkx as nx
 
 
 def rect_lattice(m: int, n: int) -> g.Matrix:
@@ -91,7 +92,7 @@ class Lattice:
         #import pdb; pdb.set_trace()
         connection = self.preferred_neighbors[1] if self.first_sites[site] else self.preferred_neighbors[2]
         # self.occupied[np.array(G[site, :].new().to_coo()[0])] <- is this expression correct?
-        curr_connections = np.sum(self.occupied[np.array(G[site, :].new().to_coo()[0])])
+        curr_connections = np.sum(self.occupied[np.array(self.G[site, :].new().to_coo()[0])])
         #curr_connections = np.sum(np.array(np.logical_and(
         #    np.array(G[site, :].new().to_coo()[0]), self.occupied), dtype=int))  # mask `sites` array
         return (curr_connections - connection) ** 2
@@ -103,7 +104,7 @@ class Lattice:
         connection = self.preferred_neighbors[1] if self.first_sites[site] else self.preferred_neighbors[2]
         #curr_connections = np.sum(np.array(np.logical_and(
         #    np.array(G[site, :].new().to_coo()[0]), occupied), dtype=int))  # mask `sites` array
-        curr_connections = np.sum(occupied[np.array(G[site, :].new().to_coo()[0])])
+        curr_connections = np.sum(occupied[np.array(self.G[site, :].new().to_coo()[0])])
 
         return (curr_connections - connection) ** 2
 
@@ -242,10 +243,13 @@ class Lattice:
             elif self.second_sites[i]: node_colors.append(300) 
             else: node_colors.append(0)
 
-        pos = dict(zip(self.G.cols(), np.array(list(self.G.nodes()))))
+        #pos = dict(zip(self.G.cols(), np.array(list(self.G.nodes()))))
 
-        nx.draw(self.G, pos, node_color=node_colors,
-        cmap=custom_cmap, node_size=75, vmin=0, vmax=2, ax=ax)
+        #nx.draw(self.G, pos, node_color=node_colors,
+        #cmap=custom_cmap, node_size=75, vmin=0, vmax=2, ax=ax)
+
+        nx.draw(self.G,  node_color=node_colors,
+        node_size=75, vmin=0, vmax=2, ax=ax)
 
         p1_patch = mpatches.Patch(color=c1, label=f"{self.pref_conn[0]}")
         p2_patch = mpatches.Patch(color=c2, label=f"{self.pref_conn[1]}")
@@ -257,18 +261,98 @@ class Lattice:
 
         return ax
 
-beta = 2.0
-n = 0.45
-n_1 = 0.8 * n
-l = 4
 
-energies = None
+def run_with_profiler():
+    beta = 2.0
+    n = 0.45
+    n_1 = 0.8 * n
+    l = 5
+
+    import cProfile
+    import pstats
+    import re
+    import pandas as pd
 
 
-G = rect_lattice(l*l, l*l)
+    G = cubic_lattice(l*l, l*l, l*l)
 
-L = Lattice(beta, n, n_1, G, [0,0,1])
-L.swap_step()
+    L = Lattice(beta, n, n_1, G, [0,0,1])
+
+    nsteps = 10
+
+    
+
+    profiler = cProfile.Profile()
+    profiler.enable()
+
+    energies = list()
+    for _ in range(nsteps):
+        L.mc_step()
+        if np.random.rand() <= .3: L.swap_step()
+        energies.append(
+                    np.sum(L.sites_energies)
+                    )
+
+    #plt.plot(range(nsteps), energies)
+    #plt.show()
+
+    profiler.disable()
+    #profiler.print_stats(sort='time')
+
+    
+
+    stats = pstats.Stats(profiler)
+    stats.sort_stats('time')
+    
+    local = ['_local_energy', '__local_energy', 'swap_step', 'mc_step']    
+    names = []
+    times = []
+    loc   = []
+    for item in stats.stats.items():
+        if item[0][2] in local: loc.append(True) # skip self-defined functions
+        else: loc.append(False)
+        names.append(item[0][2]) 
+        times.append(item[1][3])
+
+    colors = {True: 'green', False: 'blue'}
+    timing_df = pd.DataFrame({"fn_name": names, "rt": times, "usr": loc})
+   
+    plt.barh(timing_df['fn_name'], timing_df['rt'], color=timing_df['usr'].map(colors))
+    plt.xlabel('Running Time [s]')
+    plt.show()
+
+
+
+def run():
+    beta = 2.0
+    n = 0.45
+    n_1 = 0.8 * n
+    l = 5
+
+
+    G = cubic_lattice(l*l, l*l, l*l)
+
+    L = Lattice(beta, n, n_1, G, [0,0,1])
+
+    nsteps = 100
+
+
+    energies = list()
+    for _ in range(nsteps):
+        L.mc_step()
+        if np.random.rand() <= .3: L.swap_step()
+        energies.append(
+                    np.sum(L.sites_energies)
+                    )
+
+
+if __name__ == '__main__':
+    run()
+
+
+
+
+
 
 # print(G)
 #g.viz.draw(G)
