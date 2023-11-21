@@ -2,6 +2,7 @@
 #include <vector>
 
 #include <random>
+#include <stdlib.h>
 
 int sample(bool* a, int size) {
     int count = 0;
@@ -35,7 +36,7 @@ int sample(bool* a, int size) {
 
 
 auto _ = -1;
-enum Spin {empty, red, blue};
+enum class Spin {empty, red, blue};
 struct lattice_entry {
     int x; int y; int z;
     Spin spin;
@@ -83,8 +84,7 @@ static inline void fill_neighbors(lattice_entry *e, int i, int j, int k,
 lattice_entry *build_cubic(int nx, int ny, int nz)
 {
     int N = nx * ny * nz;
-    // TODO: make C++20
-    lattice_entry *L = (lattice_entry *)calloc(sizeof(lattice_entry) * N, 0);
+    lattice_entry *L = (lattice_entry *)calloc(N, sizeof(lattice_entry));
     // fill connections
     for (int i=0;i<nx;++i)
     {
@@ -144,23 +144,24 @@ void fill_lattice(Lattice *L, float beta, float n, float N,
 {
     L->beta = beta; L->n = n; L->n1 = N; L->grid = build_cubic(nx, ny, nz);
     L->N = (int)(N); L->num_spins = (int)(n*N); 
+    // TODO check how to distribute particles
     L->num_red = (int)(n*N/2); L->num_blue = L->num_spins - L->num_red;
 
-    L->vacant = (bool*)(calloc(L->num_spins * sizeof(bool)));
-    L->red    = (bool*)(calloc(L->num_spins * sizeof(bool)));
-    L->blue   = (bool*)(calloc(L->num_spins * sizeof(bool)));
-    for (int i=0;i<L->num_spins;++i) L->vacant = 1;
-    for (int i=0;i<L->num_spins;++i) L->red    = 0;
-    for (int i=0;i<L->num_spins;++i) L->blue   = 0;
+    L->vacant = (bool*)(calloc(L->num_spins, sizeof(bool)));
+    L->red    = (bool*)(calloc(L->num_spins, sizeof(bool)));
+    L->blue   = (bool*)(calloc(L->num_spins, sizeof(bool)));
+    for (int i=0;i<L->num_spins;++i) L->vacant[i] = 1;
+    for (int i=0;i<L->num_spins;++i) L->red   [i] = 0;
+    for (int i=0;i<L->num_spins;++i) L->blue  [i] = 0;
 
     int num_reds, num_blues; num_reds = num_blues = 0;
 
     while (num_reds < L->num_red)
     {
         try {
-            auto site = sample(L->vacant, num_spins);
+            auto site = sample(L->vacant, L->num_spins);
             L->vacant[site] = 0; L->red[site] = 1;
-            L->grid[site].spin = red;
+            L->grid[site].spin = Spin::red;
             num_reds++;     
         } catch (const std::exception& e) {
             std::cerr << e.what() << std::endl;
@@ -170,16 +171,37 @@ void fill_lattice(Lattice *L, float beta, float n, float N,
     while (num_blues < L->num_blue)
     {
         try {
-            auto site = sample(L->vacant, num_spins);
+            auto site = sample(L->vacant, L->num_spins);
             L->vacant[site] = 0; L->blue[site] = 1;
-            L->grid[site].spin = blue;
+            L->grid[site].spin = Spin::blue;
             num_blues++;     
         } catch (const std::exception& e) {
             std::cerr << e.what() << std::endl;
         } 
     }
-    
+    for(int i=0;i<L->num_spins;++i)
+        L->grid[i].energy = local_energy(L, i);
 }
+
+
+bool mc_step(Lattice *L)
+{
+    // TODO
+    // - can we actually just copy a single site and then 
+    //   compute different energies to accept/reject?
+    return false;
+}
+
+
+bool swap_step(Lattice *L)
+{
+    // TODO
+    // - can we actually just copy a single site and then 
+    //   compute different energies to accept/reject?
+    return false;
+}
+
+
 
 /* TODO
 void clean(Lattice *L) 
