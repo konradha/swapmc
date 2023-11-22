@@ -1,19 +1,34 @@
+// clang-15 -lm -lstdc++ -std=c++17 lattice3d.cpp -o lat && ./lat
+
+#include <cmath>
 #include <iostream>
 #include <vector>
 
 #include <random>
 #include <stdlib.h>
+#include <tuple>
 
-int sample(bool* a, int size) {
+
+struct tru {
+    bool operator()(bool b) const { return !b;}
+};
+
+
+struct neg {
+    bool operator()(bool b) const { return b;}
+};
+
+template <typename pred>
+int sample(bool* a, int size, pred p) {
     int count = 0;
     for (int i = 0; i < size; ++i) {
-        if (!a[i]) {
+        if (p(a[i])) {
             ++count;
         }
     }
 
     if (count == 0) {
-        throw std::runtime_error("No true elements in the array");
+        throw std::runtime_error("cannot sample from array");
     }
 
     std::random_device rd;
@@ -22,7 +37,7 @@ int sample(bool* a, int size) {
 
     int rand = dis(gen);
     for (int i = 0; i < size; ++i) {
-        if (!a[i]) {
+        if (p(a[i])) {
             if (rand == 0) {
                 return i;
             }
@@ -35,16 +50,19 @@ int sample(bool* a, int size) {
 }
 
 
+
+
 auto _ = -1;
 enum class Spin {empty, red, blue};
 struct lattice_entry {
     int x; int y; int z;
     Spin spin;
-    int neighbors[6]={_,_,_,_,_,_};
+    int neighbors[6]={_, _, _, _, _, _};
     float energy;
     //bool boundary_neighbors[6]){_,_,_,_,_,_}; // for parallelization purposes
 } __attribute__((packed, aligned(8)));
 // TODO benchmark alignment
+// TODO check for better granularity in SoA
 
 void print_lattice(lattice_entry *l, int nx, int ny, int nz)
 {
@@ -109,9 +127,10 @@ struct Lattice {
     float n1;
     float n2;
     int nx; int ny; int nz;
+    int N;
 
     lattice_entry *grid;
-    // this could be made better
+    // this as SoA
     bool *vacant;
     bool *red;
     bool *blue;
@@ -159,7 +178,7 @@ void fill_lattice(Lattice *L, float beta, float n, float N,
     while (num_reds < L->num_red)
     {
         try {
-            auto site = sample(L->vacant, L->num_spins);
+            auto site = sample(L->vacant, L->num_spins, tru());
             L->vacant[site] = 0; L->red[site] = 1;
             L->grid[site].spin = Spin::red;
             num_reds++;     
@@ -171,7 +190,7 @@ void fill_lattice(Lattice *L, float beta, float n, float N,
     while (num_blues < L->num_blue)
     {
         try {
-            auto site = sample(L->vacant, L->num_spins);
+            auto site = sample(L->vacant, L->num_spins, tru());
             L->vacant[site] = 0; L->blue[site] = 1;
             L->grid[site].spin = Spin::blue;
             num_blues++;     
@@ -183,12 +202,55 @@ void fill_lattice(Lattice *L, float beta, float n, float N,
         L->grid[i].energy = local_energy(L, i);
 }
 
+float get_local_energy(Lattice *L, int site)
+{
+   auto E  = L->grid[site].energy; 
+   for (const auto& idx : L->grid[site].neighbors) {
+       if (idx == -1) continue;
+       E += L->grid[idx].energy;
+   }
+   return E;
+}
+
+void move(Lattice *L, int from, int to)
+{
+
+    // change ALL components in L->grid and L->red, L->blue 
+    // update local energies
+    // TODO
+}
+
+std::tuple<float, float> flip_and_calc(Lattice *L, int from, int to)
+{
+    // make a move, calculate energy
+    move(L, from, to);
+    float E2 = get_local_energy(L, to) + get_local_energy(L, from); 
+    // move back, calculate energy
+    move(L, to, from);
+    float E1 = get_local_energy(L, from);
+
+    return {E1, E2};
+}
+
 
 bool mc_step(Lattice *L)
 {
-    // TODO
-    // - can we actually just copy a single site and then 
-    //   compute different energies to accept/reject?
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+
+    auto mv = sample(L->vacant, L->N, tru()); // get one of the particles
+    auto to = sample(L->vacant, L->N, neg()); // get one free slot on lattice
+
+    auto [E1, E2] = flip_and_calc(L, mv, to); 
+    auto dE = E2 - E1;
+
+    if (dis(gen) < std::exp( -L->beta * dE )) // make fast
+    {
+        move(L, mv, to);
+        return true;
+    }
+
     return false;
 }
 
