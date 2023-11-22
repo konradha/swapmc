@@ -20,6 +20,10 @@ struct neg {
 
 template <typename pred>
 int sample(bool* a, int size, pred p) {
+    // std::cout << "array is\n";
+    // for(auto i=0;i<size;++i) std::cout << a[i] << " ";
+    // std::cout << "\n";
+
     int count = 0;
     for (int i = 0; i < size; ++i) {
         if (p(a[i])) {
@@ -174,7 +178,7 @@ void fill_lattice(Lattice *L, float beta, float n, float N,
     for (int i=0;i<L->num_spins;++i) L->blue  [i] = 0;
 
     int num_reds, num_blues; num_reds = num_blues = 0;
-
+    // TODO: simulation breaks down here. figure out tomorrow
     while (num_reds < L->num_red)
     {
         try {
@@ -212,23 +216,46 @@ float get_local_energy(Lattice *L, int site)
    return E;
 }
 
+
+////template<> -- for red/blue
 void move(Lattice *L, int from, int to)
 {
-
-    // change ALL components in L->grid and L->red, L->blue 
-    // update local energies
-    // TODO
+    if (L->red[from]) {
+        // auto site_from = L->grid[from];
+        // auto site_to   = L->grid[to];
+        L->vacant[from] = 1;
+        L->vacant[to] = 0;
+        L->grid[from].spin = Spin::empty;
+        L->grid[from].energy = 0;
+        L->vacant[from] = 1;
+        L->red[from] = 0;
+        L->vacant[to] = 0;
+        L->red[to] = 1;
+        L->grid[to].spin = Spin::red;
+        L->grid[to].energy = local_energy(L, to);
+    } else {
+        L->vacant[from] = 1;
+        L->vacant[to] = 0;
+        L->grid[from].spin = Spin::empty;
+        L->grid[from].energy = 0;
+        L->vacant[from] = 1;
+        L->red[from] = 0;
+        L->vacant[to] = 0;
+        L->red[to] = 1;
+        L->grid[to].spin = Spin::red;
+        L->grid[to].energy = local_energy(L, to);
+    }
 }
 
 std::tuple<float, float> flip_and_calc(Lattice *L, int from, int to)
 {
+    // change to local only?
     // make a move, calculate energy
     move(L, from, to);
     float E2 = get_local_energy(L, to) + get_local_energy(L, from); 
     // move back, calculate energy
     move(L, to, from);
     float E1 = get_local_energy(L, from);
-
     return {E1, E2};
 }
 
@@ -238,13 +265,12 @@ bool mc_step(Lattice *L)
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(0.0, 1.0);
-
+    
     auto mv = sample(L->vacant, L->N, tru()); // get one of the particles
     auto to = sample(L->vacant, L->N, neg()); // get one free slot on lattice
-
+                                              //
     auto [E1, E2] = flip_and_calc(L, mv, to); 
     auto dE = E2 - E1;
-
     if (dis(gen) < std::exp( -L->beta * dE )) // make fast
     {
         move(L, mv, to);
@@ -254,13 +280,75 @@ bool mc_step(Lattice *L)
     return false;
 }
 
+void swap(Lattice *L, int r, int b)
+{ 
+    L->red[r] = 0; L->blue[b] = 0;
+    L->red[b] = 1; L->blue[r] = 1;
+    L->grid[r].spin = Spin::blue;
+    L->grid[b].spin = Spin::red;
+
+    L->grid[r].energy = L->grid[r].energy = 0;
+    L->grid[r].energy = local_energy(L, r);
+    L->grid[b].energy = local_energy(L, b);
+}
+
+std::tuple<float, float> swap_and_calc(Lattice *L, int r, int b)
+{
+    // TODO check if terms missing
+    swap(L, r, b);
+    float E2 = get_local_energy(L, r) + get_local_energy(L, b);  
+    swap(L, b, r);
+    float E1 = get_local_energy(L, r);
+    return {E1, E2};
+}
+
 
 bool swap_step(Lattice *L)
 {
-    // TODO
-    // - can we actually just copy a single site and then 
-    //   compute different energies to accept/reject?
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+
+    auto mv = sample(L->red, L->N,  tru()); // get a red
+    auto to = sample(L->blue, L->N, tru()); // get a blue
+
+    auto [E1, E2] = swap_and_calc(L, mv, to); 
+    auto dE = E2 - E1;
+
+    if (dis(gen) < std::exp( -L->beta * dE )) // make fast
+    {
+        swap(L, mv, to);
+        return true;
+    }
     return false;
+}
+
+float energy(Lattice *L)
+{
+    float E = 0.;
+    for (int site = 0; site < L->num_spins; ++site)
+        E += L->grid[site].energy;
+    return E;
+}
+
+void run()
+{
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+
+    float beta = 2.; float n = .45; float n_1 = .8 * n;
+    int l = 6; 
+    auto L = Lattice();
+    fill_lattice(&L, beta, n, n_1, l, l, l);
+    int nsteps = 2500;
+    std::vector<float> energies;
+    for (int i=0; i<nsteps;++i)
+    {
+        mc_step(&L);
+        //if (dis(gen) <= .3) swap_step(&L); 
+        //energies.push_back(energy(&L));
+    }
 }
 
 
@@ -276,8 +364,45 @@ void clean(Lattice *L)
 
 int main()
 {
-    int nx = 4; int ny = 4; int nz = 4;
-    int N = nx * ny * nz;
-    auto L = build_cubic(nx, ny, nz);
-    free(L);
+    run();
+    //int nx = 4; int ny = 4; int nz = 4;
+    //int N = nx * ny * nz;
+    //auto L = build_cubic(nx, ny, nz);
+    //free(L);
 }
+
+
+
+
+
+
+
+
+
+// struct lattice_entry {
+//     int x; int y; int z;
+//     Spin spin;
+//     int neighbors[6]={_, _, _, _, _, _};
+//     float energy;
+//     //bool boundary_neighbors[6]){_,_,_,_,_,_}; // for parallelization purposes
+// } __attribute__((packed, aligned(8)));
+// struct Lattice {
+//     float beta;
+//     float n;
+//     float n1;
+//     float n2;
+//     int nx; int ny; int nz;
+//     int N;
+// 
+//     lattice_entry *grid;
+//     // this as SoA
+//     bool *vacant;
+//     bool *red;
+//     bool *blue;
+// 
+//     int num_red;
+//     int num_blue; 
+//     int num_spins;
+// 
+//     int *preferred;
+// };
