@@ -2,12 +2,14 @@
 
 #include <cmath>
 #include <iostream>
-#include <vector>
+#include <immintrin.h>
+
 
 #include <random>
 #include <stdlib.h>
 #include <string>
 #include <tuple>
+#include <vector>
 
 
 struct tru {
@@ -39,7 +41,7 @@ int sample(bool* a, int size, pred p, std::string what = ""){
     }
 
     std::random_device rd;
-    std::mt19937 gen(rd());
+    std::mt19937 gen(__rdtsc());
     std::uniform_int_distribution<> dis(0, count - 1);
 
     int rand = dis(gen);
@@ -354,25 +356,25 @@ float energy(Lattice *L)
 void run()
 {
     std::random_device rd;
-    std::mt19937 gen(rd());
+    std::mt19937 gen(__rdtsc());
     std::uniform_real_distribution<> dis(0.0, 1.0);
 
     float beta = 2.; float n = .45; float n_1 = .8 * n;
-    int l = 10; 
+    int l = 30; 
     auto L = Lattice();
     int *pref =(int*)calloc(sizeof(int), 3);
     pref[0] = 0; pref[1] = 3; pref[2] = 5;
     fill_lattice(&L, beta, n, n_1, l, l, l, pref, 3); 
     
     
-    int nsteps = 20000;
-    std::vector<float> energies;
-    
+    int nsteps = 25000;
+    std::vector<float> energies;    
     for (int i=0; i<nsteps;++i)
     {
-        std::cout << i << "," << energy(&L) <<  "\n";
+        auto e = energy(&L); auto epp = e / L.num_spins;
+        std::cout << i << "," << e << "," <<epp<<  "\n";
         mc_step(&L);
-        if (dis(gen) <= .03) swap_step(&L); 
+        if (dis(gen) <= .1) swap_step(&L); 
         //energies.push_back(energy(&L));
     }
 }
@@ -390,6 +392,7 @@ void clean(Lattice *L)
 
 int main()
 {
+
     run();
     //int nx = 4; int ny = 4; int nz = 4;
     //int N = nx * ny * nz;
