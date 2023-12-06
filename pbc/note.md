@@ -1,6 +1,7 @@
 ### Compilation for profiling
 
 ```bash
+# -pg -- profiling symbols (Q: How does it differ from -g?)
 clang-15 -pg -lm -lstdc++ -std=c++17 -O3 -march=native -ffast-math lattice3d.cpp -o lat && ./lat .1 .75 100000
 ```
 
