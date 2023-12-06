@@ -353,13 +353,13 @@ float energy(Lattice *L)
     return E;
 }
 
-void run()
+void run(float b=2.)
 {
     std::random_device rd;
     std::mt19937 gen(__rdtsc());
     std::uniform_real_distribution<> dis(0.0, 1.0);
 
-    float beta = 2.; float n = .45; float n_1 = .8 * n;
+    float beta = b; float n = .45; float n_1 = .8 * n;
     int l = 30; 
     auto L = Lattice();
     int *pref =(int*)calloc(sizeof(int), 3);
@@ -367,14 +367,14 @@ void run()
     fill_lattice(&L, beta, n, n_1, l, l, l, pref, 3); 
     
     
-    int nsteps = 25000;
+    int nsteps = 100000;
     std::vector<float> energies;    
     for (int i=0; i<nsteps;++i)
     {
         auto e = energy(&L); auto epp = e / L.num_spins;
         std::cout << i << "," << e << "," <<epp<<  "\n";
         mc_step(&L);
-        if (dis(gen) <= .1) swap_step(&L); 
+        if (dis(gen) <= .333) swap_step(&L); 
         //energies.push_back(energy(&L));
     }
 }
@@ -390,10 +390,17 @@ void clean(Lattice *L)
 
                                       
 
-int main()
+int main(int argc, char **argv)
 {
-
-    run();
+    if (argc < 2)
+        run();
+    else
+    {
+        auto arg_beta = argv[1];
+        auto beta = atof(arg_beta);
+        std::cout << beta << "\n";
+        run(beta);
+    }
     //int nx = 4; int ny = 4; int nz = 4;
     //int N = nx * ny * nz;
     //auto L = build_cubic(nx, ny, nz);
