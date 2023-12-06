@@ -1,14 +1,18 @@
 #include "structs.h"
 
+#include <cassert>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 #include <immintrin.h>
+#include <numeric>
 
 
 #include <random>
 #include <stdexcept>
 #include <stdlib.h>
 #include <string>
+
 #include <tuple>
 #include <vector>
 
@@ -333,7 +337,55 @@ float energy(Lattice *L)
     return E;
 }
 
-void run(float b=2., float rho=.45, int nstep=10000)
+
+void and_arrays(bool * __restrict r, bool * __restrict o, bool * __restrict n, int N)
+{
+    // still the fastest when running `-O3`
+    // -- better than hand-optimized intrinsics
+    int k = 0;
+    for(;k<N;++k)
+        r[k] = o[k] & n[k];
+}
+
+float sum_bool(bool * __restrict r, int N)
+{
+    return static_cast<float>(std::accumulate(r, r+N, 0));
+}
+
+
+
+float autocorr_simple(
+        bool * __restrict tmp1, bool * __restrict tmp2,
+        std::vector<bool *> &configs_red, std::vector<bool *> &configs_blue, Lattice *L, int curr, int window_size)
+{
+    unsigned int align = 32;
+    auto padded_N = (L->num_sites + (align-1)) & ~(align-1);
+    bool *res_r;bool *res_b;
+    if (posix_memalign((void**)&res_r, align, padded_N * sizeof(bool)) != 0) return -100.; // tmp array 
+    if (posix_memalign((void**)&res_b, align, padded_N * sizeof(bool)) != 0) return -100.; // tmp array
+                                                                                       //
+    memcpy(res_r, L->red, L->num_sites);
+    memcpy(res_b, L->blue, L->num_sites);
+
+    configs_red.push_back(res_r);
+    configs_blue.push_back(res_b);
+
+    if (curr < window_size) return -1.;
+
+    auto N  = L->num_sites * L->n;
+    auto C0 = L->N * (L->n1 * L->n1 + L->n2 * L->n2);
+
+    and_arrays(tmp1, res_r, configs_red[curr-window_size], L->num_sites);    
+    and_arrays(tmp2, res_b, configs_blue[curr-window_size], L->num_sites);
+    
+    auto r = sum_bool(tmp1, L->num_sites);
+    auto b = sum_bool(tmp2, L->num_sites);
+
+    auto div = (1./N) * (r + b) - C0;
+    return div / (1. - C0);
+}
+
+int run(float b=2., float rho=.45, int nstep=10000)
 {
     std::random_device rd;
     std::mt19937 gen(__rdtsc());
@@ -345,17 +397,34 @@ void run(float b=2., float rho=.45, int nstep=10000)
     int *pref =(int*)calloc(sizeof(int), 3);
     pref[0] = 0; pref[1] = 3; pref[2] = 5;
     fill_lattice(&L, beta, n, n_1, l, l, l, pref, 3); 
+
+
+    unsigned int align = 32;
+    auto padded_N = (L.num_sites + (align-1)) & ~(align-1);
     
+    int autocorr_window = 1024;    
+    bool *tmp1; bool *tmp2; 
+    if (posix_memalign((void**)&tmp1, align, padded_N * sizeof(bool)) != 0) return 1; // tmp array 
+    if (posix_memalign((void**)&tmp2, align, padded_N * sizeof(bool)) != 0) return 1; // tmp array
+    std::vector<bool *> configs_red; 
+    std::vector<bool *> configs_blue;
     
     int nsteps = nstep;
-    std::vector<float> energies;    
+       
+    
     for (int i=0; i<nsteps;++i)
     {
+        auto ac = autocorr_simple(tmp1, tmp2, configs_red, configs_blue, &L, i, autocorr_window); 
         auto e = energy(&L); auto epp = e / L.num_spins;
-        std::cout << i << "," << e << "," <<epp<<  "\n";
+        std::cout << i << "," << e << "," <<epp<< ","<<ac << "\n";
         mc_step(&L);
         if (dis(gen) <= .12) swap_step(&L); 
     }
+
+    for (int i=0;i<configs_red.size();++i) free(configs_red[i]);
+    for (int i=0;i<configs_blue.size();++i) free(configs_blue[i]);
+    free(tmp1); free(tmp2); 
+    return 0;
 }
                                       
 
