@@ -31,40 +31,23 @@ struct neg {
     bool operator()(bool b) const { return !b;}
 };
 
+
 template <typename pred>
-int sample(bool* a, int size, pred p){
-    // TODO this loop is not needed -> we always know
-    // L->num_spins, L->num_red, L->num_blue, L->numspins - ...
-    int count = 0;
-    for (int i = 0; i < size; ++i) {
-        if (p(a[i])) {
-            ++count;
-        }
-    }
-
-    if (count == 0) {
-        //for(int i=0;i<size;++i) std::cout << a[i] << " ";
-        //std::cout << "\n";
-        throw std::runtime_error("cannot sample from array");
-    }
-
-
+int sample(bool* a, int size, int count, pred p){
     // TODO this draw may be done fast(er) ....
-    std::random_device rd;
-    std::mt19937 gen(__rdtsc());
+    
+    std::random_device rd_sample;
+    std::mt19937 gen_sample(__rdtsc());
     std::uniform_int_distribution<> dis(0, count - 1);
-
-    int rand = dis(gen);
+    int rand = dis(gen_sample);
     for (int i = 0; i < size; ++i) {
         if (p(a[i])) {
-            if (rand == 0) {
-                return i;
-            }
+            if (rand == 0) return i;
             --rand;
         }
     }
 
-    // This point should never be reached.
+    // unreachable
     throw std::runtime_error("Unexpected error in sample function");
 }
 
@@ -143,8 +126,8 @@ float local_energy(Lattice *L, int site)
 void fill_lattice(Lattice *L, float beta, float n, float N,
                   int nx, int ny, int nz, int *pref, int pref_size)
 {
-    std::cout << "total density is: " << n << "\n";
-    std::cout << "subdensity is:    " << N << "\n";
+    //std::cout << "total density is: " << n << "\n";
+    //std::cout << "subdensity is:    " << N << "\n";
     L->beta = beta; L->n = n; L->n1 = N; L->grid = build_cubic(nx, ny, nz);
     L->N = N;  
     L->num_sites = nx * ny * nz;
@@ -163,7 +146,7 @@ void fill_lattice(Lattice *L, float beta, float n, float N,
     while (num_reds < L->num_red)
     {
         try {
-            auto site = sample(L->vacant, L->num_sites, tru());
+            auto site = sample(L->vacant, L->num_sites, L->num_sites - (num_reds + num_blues), tru());
             L->vacant[site] = 0; L->red[site] = 1;
             L->grid[site].spin = Spin::red;
             num_reds++;     
@@ -176,7 +159,7 @@ void fill_lattice(Lattice *L, float beta, float n, float N,
     while (num_blues < L->num_blue)
     {
         try {
-            auto site = sample(L->vacant, L->num_sites, tru());
+            auto site = sample(L->vacant, L->num_sites, L->num_sites - (num_reds + num_blues), tru());
             L->vacant[site] = 0; L->blue[site] = 1;
             L->grid[site].spin = Spin::blue;
             num_blues++;     
@@ -185,6 +168,8 @@ void fill_lattice(Lattice *L, float beta, float n, float N,
             return;
         } 
     }
+
+    assert(num_blues ==  L->num_blue && num_reds == L->num_red);  
     
     for(int i=0;i<L->num_sites;++i)
         L->grid[i].energy = local_energy(L, i);
@@ -273,8 +258,8 @@ bool mc_step(Lattice *L)
     std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(0.0, 1.0); 
        
-    auto mv = sample(L->vacant, L->num_sites, neg()); // get one of the particles
-    auto to = sample(L->vacant, L->num_sites, tru()); // get one free slot on lattice
+    auto mv = sample(L->vacant, L->num_sites, L->num_red + L->num_blue,  neg()); // get one of the particles
+    auto to = sample(L->vacant, L->num_sites, L->num_sites - (L->num_red + L->num_blue), tru()); // get one free slot on lattice
     auto [E1, E2] = flip_and_calc(L, mv, to); 
     auto dE = E2 - E1;
     if (dis(gen) < std::exp( -L->beta * dE )) // make fast
@@ -313,8 +298,8 @@ bool swap_step(Lattice *L)
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(0.0, 1.0); 
-    auto mv = sample(L->red, L->num_sites,  tru()); // get a red
-    auto to = sample(L->blue, L->num_sites, tru()); // get a blue
+    auto mv = sample(L->red, L->num_sites, L->num_red,  tru()); // get a red
+    auto to = sample(L->blue, L->num_sites, L->num_blue, tru()); // get a blue
     auto [E1, E2] = swap_and_calc(L, mv, to); 
     auto dE = E2 - E1;
 
@@ -435,9 +420,9 @@ int run(float b=2., float rho=.45, int nstep=10000)
 
         auto t_c0 = __rdtsc();
         auto e = energy(&L); auto epp = e / L.num_spins;
-        //std::cout << i << "," << e << "," <<epp/*<< ","<<ac*/ << "\n";
+        std::cout << i << "," << e << "," <<epp/*<< ","<<ac*/ << "\n";
         mc_step(&L);
-        if (dis(gen) <= .12) swap_step(&L); 
+        //if (dis(gen) <= .12) swap_step(&L); 
         auto t_cf = __rdtsc();
         calc_time += (t_cf - t_c0);
 
@@ -446,17 +431,17 @@ int run(float b=2., float rho=.45, int nstep=10000)
         //out.write(static_cast<char*>(static_cast<void*>(L.red)), sizeof(bool) * L.num_sites);  out.write("\n", 1);
         //out.write(static_cast<char*>(static_cast<void*>(L.blue)), sizeof(bool) * L.num_sites); out.write("\n", 1);
         //
-        auto t_w = write_bool_array(L.red, L.num_sites, out);
-        t_w += write_bool_array(L.blue, L.num_sites, out);
-        write_time += t_w;
+        //auto t_w = write_bool_array(L.red, L.num_sites, out);
+        //t_w += write_bool_array(L.blue, L.num_sites, out);
+        //write_time += t_w;
     }
     out.close();
 
-    std::cout << "calc time total:  " << calc_time << "\n";
-    std::cout << "write time total: " << write_time << "\n";
-    
-    std::cout << "calc time avg:  " << float(calc_time) / nsteps << "\n";
-    std::cout << "write time avg: " << float(write_time) / nsteps << "\n";
+    //std::cout << "calc time total:  " << calc_time << "\n";
+    //std::cout << "write time total: " << write_time << "\n";
+    //
+    //std::cout << "calc time avg:  " << float(calc_time) / nsteps << "\n";
+    //std::cout << "write time avg: " << float(write_time) / nsteps << "\n";
 
 
     for (int i=0;i<configs_red.size();++i) free(configs_red[i]);
