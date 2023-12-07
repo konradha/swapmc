@@ -15,7 +15,7 @@
 - [ ] finish autocorrelation investigation
 - [ ] reproduce glassy phase relaxation from japanese paper 
 - [ ] submit jobs to do the grid search: density / temperature
-- [ ] more profiling to get all possible optimizations done
+- [ ] more profiling to get most possible optimizations done
 - [ ] develop strategy to save configurations (do we need all of them?)
 - [ ] parallel tempering tries
 - [ ] susceptibility graphs (need _lots_ of data) (as higher moments are harder to estimate)
@@ -23,9 +23,7 @@
       why are they hard, can we say something about the unreasonable effectiveness of swap mc,
       'modern' code -- ie. C implementation with best practices from HPC still the fastest?, 
       power laws versus superexponentials, useful theory: information bottleneck method, measure theory,
-      KL divergence and other useful results from information theory, 
-
-- [ ] totally unclear: correlates, reproducing all useful statistics, RFOT basics, MCT basics, 
+      KL divergence and other useful results from information theory,  
  
 - [ ] papers to investigate (relate?): RG-Flow (explaining RG ...), Bouchaud recent, glass transition
       experimental, relevant readings (+exercises) from `Information, Physics and Computation`, Montanari:
