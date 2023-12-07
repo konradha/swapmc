@@ -395,12 +395,14 @@ float autocorr_simple(
 
 int write_bool_array(bool *b, int size, std::ostream &file)
 {
+    auto t0 = __rdtsc(); 
     for(int k=0;k<size;++k)
     {
         file.write(reinterpret_cast<const char *>(static_cast<void *>(b + k)), sizeof(bool));
     }
     file.write("\n", 1);
-    return 0;
+    auto tf = __rdtsc();
+    return tf-t0;
 }
 
 int run(float b=2., float rho=.45, int nstep=10000)
@@ -432,7 +434,8 @@ int run(float b=2., float rho=.45, int nstep=10000)
     auto fname = "data.dat";
     std::ofstream out(fname, std::ios::binary);
 
-       
+    int calc_time, write_time; 
+    calc_time = write_time = 0;
     
     for (int i=0; i<nsteps;++i)
     {
@@ -440,22 +443,32 @@ int run(float b=2., float rho=.45, int nstep=10000)
         // maybe TODO: make this run using aligned bitsets.
         //auto ac = autocorr_simple(tmp1, tmp2, configs_red, configs_blue, &L, i, autocorr_window); 
 
+        auto t_c0 = __rdtsc();
         auto e = energy(&L); auto epp = e / L.num_spins;
-        std::cout << i << "," << e << "," <<epp/*<< ","<<ac*/ << "\n";
+        //std::cout << i << "," << e << "," <<epp/*<< ","<<ac*/ << "\n";
         mc_step(&L);
         if (dis(gen) <= .12) swap_step(&L); 
-
-
+        auto t_cf = __rdtsc();
+        calc_time += (t_cf - t_c0);
         // write configuration to disk
         // TODO -- need numbering if running multithreaded
         //out.write(&i, sizeof(&i));
         //out.write(static_cast<char*>(static_cast<void*>(L.red)), sizeof(bool) * L.num_sites);  out.write("\n", 1);
         //out.write(static_cast<char*>(static_cast<void*>(L.blue)), sizeof(bool) * L.num_sites); out.write("\n", 1);
         //
-        write_bool_array(L.red, L.num_sites, out);
-        write_bool_array(L.blue, L.num_sites, out);
+        auto t_w = write_bool_array(L.red, L.num_sites, out);
+        t_w += write_bool_array(L.blue, L.num_sites, out);
+        write_time += t_w;
     }
     out.close();
+
+    std::cout << "calc time total:  " << calc_time << "\n";
+    std::cout << "write time total: " << write_time << "\n";
+    
+    std::cout << "calc time avg:  " << float(calc_time) / nsteps << "\n";
+    std::cout << "write time avg: " << float(write_time) / nsteps << "\n";
+
+
     for (int i=0;i<configs_red.size();++i) free(configs_red[i]);
     for (int i=0;i<configs_blue.size();++i) free(configs_blue[i]);
     free(pref);
