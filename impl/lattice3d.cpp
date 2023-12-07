@@ -7,6 +7,8 @@
 #include <immintrin.h>
 #include <numeric>
 
+#include <fstream>
+
 
 #include <random>
 #include <stdexcept>
@@ -391,6 +393,16 @@ float autocorr_simple(
     return div / (1. - C0);
 }
 
+int write_bool_array(bool *b, int size, std::ostream &file)
+{
+    for(int k=0;k<size;++k)
+    {
+        file.write(reinterpret_cast<const char *>(static_cast<void *>(b + k)), sizeof(bool));
+    }
+    file.write("\n", 1);
+    return 0;
+}
+
 int run(float b=2., float rho=.45, int nstep=10000)
 {
     std::random_device rd;
@@ -416,17 +428,34 @@ int run(float b=2., float rho=.45, int nstep=10000)
     std::vector<bool *> configs_blue;
     
     int nsteps = nstep;
+
+    auto fname = "data.dat";
+    std::ofstream out(fname, std::ios::binary);
+
        
     
     for (int i=0; i<nsteps;++i)
     {
-        auto ac = autocorr_simple(tmp1, tmp2, configs_red, configs_blue, &L, i, autocorr_window); 
+        // TODO: rewrite: one thread producing data, one writing to disk. autocorrelations after.
+        // maybe TODO: make this run using aligned bitsets.
+        //auto ac = autocorr_simple(tmp1, tmp2, configs_red, configs_blue, &L, i, autocorr_window); 
+
         auto e = energy(&L); auto epp = e / L.num_spins;
-        std::cout << i << "," << e << "," <<epp<< ","<<ac << "\n";
+        std::cout << i << "," << e << "," <<epp/*<< ","<<ac*/ << "\n";
         mc_step(&L);
         if (dis(gen) <= .12) swap_step(&L); 
-    }
 
+
+        // write configuration to disk
+        // TODO -- need numbering if running multithreaded
+        //out.write(&i, sizeof(&i));
+        //out.write(static_cast<char*>(static_cast<void*>(L.red)), sizeof(bool) * L.num_sites);  out.write("\n", 1);
+        //out.write(static_cast<char*>(static_cast<void*>(L.blue)), sizeof(bool) * L.num_sites); out.write("\n", 1);
+        //
+        write_bool_array(L.red, L.num_sites, out);
+        write_bool_array(L.blue, L.num_sites, out);
+    }
+    out.close();
     for (int i=0;i<configs_red.size();++i) free(configs_red[i]);
     for (int i=0;i<configs_blue.size();++i) free(configs_blue[i]);
     free(pref);
