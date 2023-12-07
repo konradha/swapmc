@@ -14,12 +14,12 @@ int main(int argc, char **argv)
     if (argc < 2) return 1;
     auto arg = argv[1];
     auto N = (int)atof(arg);
-
-    auto padded_N = (N+31) & ~31;
+    int align = 64;
+    auto padded_N = (N+(align-1)) & ~(align-1);
     bool *o; bool *n; bool *r;
-    if (posix_memalign((void**)&o, 32, padded_N * sizeof(bool)) != 0) return 1;
-    if (posix_memalign((void**)&n, 32, padded_N * sizeof(bool)) != 0) return 1;
-    if (posix_memalign((void**)&r, 32, padded_N * sizeof(bool)) != 0) return 1;
+    if (posix_memalign((void**)&o, align, padded_N * sizeof(bool)) != 0) return 1;
+    if (posix_memalign((void**)&n, align, padded_N * sizeof(bool)) != 0) return 1;
+    if (posix_memalign((void**)&r, align, padded_N * sizeof(bool)) != 0) return 1;
 
 
     for (int i=0;i<N;++i) if (i % 3 == 0) o[i] = true;

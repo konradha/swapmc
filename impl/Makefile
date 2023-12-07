@@ -1,5 +1,6 @@
 CC=clang-15
-CFLAGS = -fsanitize=address -lm -lstdc++ -std=c++17 -ffast-math -O3 -march=native
+#CFLAGS = -Wunknown-pragmas -fsanitize=address -lm -lstdc++ -std=c++17 -ffast-math -O3 -march=native
+CFLAGS = -lm -lstdc++ -std=c++17 -ffast-math -O3 -march=native
 TARGET = lat
 SRC = lattice3d.cpp
 DEPS = structs.h

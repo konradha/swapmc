@@ -31,6 +31,8 @@ struct neg {
 
 template <typename pred>
 int sample(bool* a, int size, pred p){
+    // TODO this loop is not needed -> we always know
+    // L->num_spins, L->num_red, L->num_blue, L->numspins - ...
     int count = 0;
     for (int i = 0; i < size; ++i) {
         if (p(a[i])) {
@@ -44,6 +46,8 @@ int sample(bool* a, int size, pred p){
         throw std::runtime_error("cannot sample from array");
     }
 
+
+    // TODO this draw may be done fast(er) ....
     std::random_device rd;
     std::mt19937 gen(__rdtsc());
     std::uniform_int_distribution<> dis(0, count - 1);
@@ -137,13 +141,14 @@ float local_energy(Lattice *L, int site)
 void fill_lattice(Lattice *L, float beta, float n, float N,
                   int nx, int ny, int nz, int *pref, int pref_size)
 {
-    //std::cout << "total density is: " << n << "\n";
-    //std::cout << "subdensity is:    " << N << "\n";
+    std::cout << "total density is: " << n << "\n";
+    std::cout << "subdensity is:    " << N << "\n";
     L->beta = beta; L->n = n; L->n1 = N; L->grid = build_cubic(nx, ny, nz);
     L->N = N;  
     L->num_sites = nx * ny * nz;
     L->num_spins = (int)(n*L->num_sites);
     L->num_red = (int)(L->n1 * L->num_sites); L->num_blue = L->num_spins - L->num_red;
+    
     L->preferred = pref; L->pref_size = pref_size;    
     L->vacant = (bool*)(calloc(L->num_sites, sizeof(bool)));
     L->red    = (bool*)(calloc(L->num_sites, sizeof(bool)));
@@ -367,13 +372,14 @@ float autocorr_simple(
     memcpy(res_r, L->red, L->num_sites);
     memcpy(res_b, L->blue, L->num_sites);
 
+    // TODO better strategy: this tops outat about 2.5e5
     configs_red.push_back(res_r);
     configs_blue.push_back(res_b);
 
     if (curr < window_size) return -1.;
 
     auto N  = L->num_sites * L->n;
-    auto C0 = L->N * (L->n1 * L->n1 + L->n2 * L->n2);
+    auto C0 = L->n * (L->n1 * L->n1 + L->n2 * L->n2);
 
     and_arrays(tmp1, res_r, configs_red[curr-window_size], L->num_sites);    
     and_arrays(tmp2, res_b, configs_blue[curr-window_size], L->num_sites);
@@ -402,7 +408,7 @@ int run(float b=2., float rho=.45, int nstep=10000)
     unsigned int align = 32;
     auto padded_N = (L.num_sites + (align-1)) & ~(align-1);
     
-    int autocorr_window = 1024;    
+    int autocorr_window = 128;    
     bool *tmp1; bool *tmp2; 
     if (posix_memalign((void**)&tmp1, align, padded_N * sizeof(bool)) != 0) return 1; // tmp array 
     if (posix_memalign((void**)&tmp2, align, padded_N * sizeof(bool)) != 0) return 1; // tmp array
@@ -423,7 +429,10 @@ int run(float b=2., float rho=.45, int nstep=10000)
 
     for (int i=0;i<configs_red.size();++i) free(configs_red[i]);
     for (int i=0;i<configs_blue.size();++i) free(configs_blue[i]);
+    free(pref);
     free(tmp1); free(tmp2); 
+    free(L.grid);
+    free(L.vacant); free(L.red); free(L.blue);
     return 0;
 }
                                       
@@ -432,7 +441,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        run(2.,.45,10);
+        run(2.,.75,10);
         std::cout << "args (order): temperature, density, #sweeps\n";
     }
     else
