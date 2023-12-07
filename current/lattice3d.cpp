@@ -456,7 +456,7 @@ int run(float b=2., float rho=.45, int nstep=10000)
 
 int main(int argc, char **argv)
 {
-    if (argc < 2)
+    if (argc != 2)
     {
         run(2.,.75,10);
         std::cout << "args (order): temperature, density, #sweeps\n";

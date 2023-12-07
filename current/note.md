@@ -61,11 +61,11 @@ line <- line + 1
 next_state <- create_state(line)
 while line != EOF do
     step, energy, from, to, swap_from, swap_to <- line
-    next_state <- update_state(next_state, from, to, swap_from, swap_to)
+    next_state <- update_state(next_state, from, to, swap_from, swap_to) # would probably better have a solo-loop
     if line + window >= EOF then
         return
     end if
-
+    
     if step >= window then
         measure(state, new_state)
         state <- update_state(next_state, from, to, swap_from, swap_to) # get right indices here
@@ -80,3 +80,4 @@ end while
 - for the second algorithm: devise method to more efficiently walk through the lines
   ie. save all arguments of every line in an array
 - also: may have varying length now (EV of \theta -- how many swap moves did we do?)
+- second algo can very well be made into a 3d animation
