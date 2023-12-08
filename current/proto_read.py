@@ -81,7 +81,7 @@ if __name__ == '__main__':
     from_swap_arr = data.T[5].astype(np.int8)
     to_swap_arr   = data.T[6].astype(np.int8)
 
-    windows = [10, 100, 1000,]# 10000, 100000]
+    windows = [10, 100, 1000, 10000, 100000]
 
     starting_grid = deepcopy(grid) 
     walking_grid = deepcopy(grid)
@@ -110,8 +110,11 @@ if __name__ == '__main__':
         #plt.plot(autos, label=f"{window=}")
         anded = np.zeros_like(to_mc_arr, dtype=float)
         autos = np.zeros_like(to_mc_arr, dtype=float)
-    plt.plot(cs)
-    plt.show()
+
+    print(fname, cs)
+    #plt.plot(windows, cs, marker='o')
+    #plt.xscale("log")
+    #plt.show()
 
     #plt.xscale("log")
     ##plt.yscale("log")

@@ -81,3 +81,7 @@ end while
   ie. save all arguments of every line in an array
 - also: may have varying length now (EV of \theta -- how many swap moves did we do?)
 - second algo can very well be made into a 3d animation
+
+
+## TODO 2
+- check if moves are printed correctly (do better: print arrays at the end to avoid IO)
