@@ -32,12 +32,11 @@ struct neg {
 };
 
 
+std::random_device rd_sample;
+std::mt19937 gen_sample(__rdtsc());
 template <typename pred>
 int sample(bool* a, int size, int count, pred p){
     // TODO this draw may be done fast(er) ....
-    
-    std::random_device rd_sample;
-    std::mt19937 gen_sample(__rdtsc());
     std::uniform_int_distribution<> dis(0, count - 1);
     int rand = dis(gen_sample);
     for (int i = 0; i < size; ++i) {
@@ -46,7 +45,6 @@ int sample(bool* a, int size, int count, pred p){
             --rand;
         }
     }
-
     // unreachable
     throw std::runtime_error("Unexpected error in sample function");
 }
@@ -251,7 +249,7 @@ std::tuple<float, float> flip_and_calc(Lattice *L, int from, int to)
 }
 
 
-bool mc_step(Lattice *L)
+std::tuple<int, int> mc_step(Lattice *L)
 {
     
     std::random_device rd;
@@ -265,10 +263,10 @@ bool mc_step(Lattice *L)
     if (dis(gen) < std::exp( -L->beta * dE )) // make fast
     {
         move(L, mv, to);
-        return true;
+        return {mv, to};
     }
 
-    return false;
+    return {-1, -1};
 }
 
 void swap(Lattice *L, int r, int b)
@@ -293,7 +291,7 @@ std::tuple<float, float> swap_and_calc(Lattice *L, int r, int b)
 }
 
 
-bool swap_step(Lattice *L)
+std::tuple<int, int> swap_step(Lattice *L)
 {
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -306,9 +304,9 @@ bool swap_step(Lattice *L)
     if (dis(gen) < std::exp( -L->beta * dE )) // make fast
     {
         swap(L, mv, to);
-        return true;
+        return {mv, to};
     }
-    return false;
+    return {-1, -1};
 }
 
 float energy(Lattice *L)
@@ -412,19 +410,41 @@ int run(float b=2., float rho=.45, int nstep=10000)
     int calc_time, write_time; 
     calc_time = write_time = 0;
     
+    int from_mc, to_mc;
+    int from_swap, to_swap;
+
+    for (int i=0;i<L.num_sites;++i)
+    {
+        if (L.grid[i].spin == Spin::red) std::cout << 2 << " ";
+        else if (L.grid[i].spin == Spin::blue) std::cout << 1 << " "; 
+        else std::cout << 0 << " ";
+    }
+    std::cout << "\n";
+
     for (int i=0; i<nsteps;++i)
     {
+
         // TODO: rewrite: one thread producing data, one writing to disk. autocorrelations after.
         //       see note.
         //auto ac = autocorr_simple(tmp1, tmp2, configs_red, configs_blue, &L, i, autocorr_window); 
+        // TODO: introduce pragmas for different compilation targets:
+        // 1. simple simulation
+        // 2. with positions
+
+
+        from_mc = to_mc = -1;
+        from_swap = to_swap = -1;
 
         auto t_c0 = __rdtsc();
         auto e = energy(&L); auto epp = e / L.num_spins;
-        std::cout << i << "," << e << "," <<epp/*<< ","<<ac*/ << "\n";
-        mc_step(&L);
-        //if (dis(gen) <= .12) swap_step(&L); 
+        
+        std::tie(from_mc,to_mc) = mc_step(&L);
+        if (dis(gen) <= .12) std::tie(from_swap, to_swap) = swap_step(&L); 
         auto t_cf = __rdtsc();
         calc_time += (t_cf - t_c0);
+
+        std::cout << i << "," << e << "," <<epp << "," << from_mc << "," << to_mc << "," 
+                  << from_swap << "," << to_swap << "\n";
 
         // write configuration to disk
         //out.write(&i, sizeof(&i));
@@ -456,7 +476,7 @@ int run(float b=2., float rho=.45, int nstep=10000)
 
 int main(int argc, char **argv)
 {
-    if (argc != 2)
+    if (argc != 4)
     {
         run(2.,.75,10);
         std::cout << "args (order): temperature, density, #sweeps\n";
