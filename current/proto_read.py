@@ -69,30 +69,39 @@ if __name__ == '__main__':
     n3 = N ** 3
     n2 = N ** 2
 
-    window = 1000
+    
     
     data = np.loadtxt(fname, delimiter=',', skiprows=1)
     from_mc_arr   = data.T[3].astype(np.int8)
     to_mc_arr     = data.T[4].astype(np.int8)
     from_swap_arr = data.T[5].astype(np.int8)
     to_swap_arr   = data.T[6].astype(np.int8)
+
+    windows = [1000,]# 10000, 100000]
+
     starting_grid = deepcopy(grid) 
+    walking_grid = deepcopy(grid)
+
 
     anded = np.zeros_like(to_mc_arr, dtype=float)
-    
-    for step in range(len(from_mc_arr)):
-        from_mc, to_mc = from_mc_arr[step], to_mc_arr[step] 
-        from_swap, to_swap = from_swap_arr[step], to_swap_arr[step]
-        update_grid(grid, from_mc, to_mc, from_swap, to_swap, N)
-        energies = calculate_energies(grid)
-        if step >= window:
-            wstep = step - window 
-            wfrom_mc, wto_mc = from_mc_arr[wstep], to_mc_arr[wstep] 
-            wfrom_swap, wto_swap = from_swap_arr[wstep], to_swap_arr[wstep]
-            update_grid(starting_grid, wfrom_mc, wto_mc, wfrom_swap, wto_swap, N)
+    for window in windows:    
+        starting_grid = walking_grid
+        for step in range(len(from_mc_arr)):
+            from_mc, to_mc = from_mc_arr[step], to_mc_arr[step] 
+            from_swap, to_swap = from_swap_arr[step], to_swap_arr[step]
+            update_grid(grid, from_mc, to_mc, from_swap, to_swap, N)
+            energies = calculate_energies(grid)
+            if step >= window:
+                wstep = step - window 
+                wfrom_mc, wto_mc = from_mc_arr[wstep], to_mc_arr[wstep] 
+                wfrom_swap, wto_swap = from_swap_arr[wstep], to_swap_arr[wstep]
+                update_grid(starting_grid, wfrom_mc, wto_mc, wfrom_swap, wto_swap, N)
+                anded[step] = np.sum(np.logical_and(starting_grid, grid)) / N**3 
+        plt.plot(anded, label=f"{window=}")
+        anded = np.zeros_like(to_mc_arr, dtype=float)
 
-            anded[step] = np.sum(np.logical_and(starting_grid, grid)) / N**3
-            
-    plt.plot(anded[window:])
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.legend()
     plt.show()
             
