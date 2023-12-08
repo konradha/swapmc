@@ -54,9 +54,11 @@ def calculate_energies(grid, N=30, pref=[0,3,5]):
 def create_front(grid, window, N=30, pref=[0,3,5]):
     pass
 
-def measure(grid_back, grid_front, window, N=30, pref=[0,3,5]):
-    # autocorrelations
-    pass
+def measure(grid_back, grid_front, window, N=30, pref=[0,3,5], rho=.75, rho1=.4, rho2=.35):
+    n = rho * N**3
+    C0 = rho * ( rho1 ** 2 + rho2 ** 2)
+    v = np.sum(np.logical_and(grid_back, grid_front))
+    return (v/n - C0) / (1. - C0)
 
 if __name__ == '__main__':
     fname = str(sys.argv[1])
@@ -84,6 +86,7 @@ if __name__ == '__main__':
 
 
     anded = np.zeros_like(to_mc_arr, dtype=float)
+    autos = np.zeros_like(to_mc_arr, dtype=float)
     for window in windows:    
         starting_grid = walking_grid
         for step in range(len(from_mc_arr)):
@@ -96,8 +99,10 @@ if __name__ == '__main__':
                 wfrom_mc, wto_mc = from_mc_arr[wstep], to_mc_arr[wstep] 
                 wfrom_swap, wto_swap = from_swap_arr[wstep], to_swap_arr[wstep]
                 update_grid(starting_grid, wfrom_mc, wto_mc, wfrom_swap, wto_swap, N)
-                anded[step] = np.sum(np.logical_and(starting_grid, grid)) / N**3 
-        plt.plot(anded, label=f"{window=}")
+                #anded[step] = np.sum(np.logical_and(starting_grid, grid)) / N**3 
+                autos[step] = measure(starting_grid, grid, window,) 
+        #plt.plot(anded, label=f"{window=}")
+        plt.plot(autos, label=f"{window=}")
         anded = np.zeros_like(to_mc_arr, dtype=float)
 
     plt.xscale("log")
