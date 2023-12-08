@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 from copy import deepcopy
 import sys
@@ -74,12 +75,13 @@ if __name__ == '__main__':
     
     
     data = np.loadtxt(fname, delimiter=',', skiprows=1)
+    
     from_mc_arr   = data.T[3].astype(np.int8)
     to_mc_arr     = data.T[4].astype(np.int8)
     from_swap_arr = data.T[5].astype(np.int8)
     to_swap_arr   = data.T[6].astype(np.int8)
 
-    windows = [1000,]# 10000, 100000]
+    windows = [10, 100, 1000,]# 10000, 100000]
 
     starting_grid = deepcopy(grid) 
     walking_grid = deepcopy(grid)
@@ -87,9 +89,10 @@ if __name__ == '__main__':
 
     anded = np.zeros_like(to_mc_arr, dtype=float)
     autos = np.zeros_like(to_mc_arr, dtype=float)
+    cs = []
     for window in windows:    
         starting_grid = walking_grid
-        for step in range(len(from_mc_arr)):
+        for step in tqdm(range(len(from_mc_arr))):
             from_mc, to_mc = from_mc_arr[step], to_mc_arr[step] 
             from_swap, to_swap = from_swap_arr[step], to_swap_arr[step]
             update_grid(grid, from_mc, to_mc, from_swap, to_swap, N)
@@ -101,12 +104,17 @@ if __name__ == '__main__':
                 update_grid(starting_grid, wfrom_mc, wto_mc, wfrom_swap, wto_swap, N)
                 #anded[step] = np.sum(np.logical_and(starting_grid, grid)) / N**3 
                 autos[step] = measure(starting_grid, grid, window,) 
+        cs.append(np.mean(autos[window:]))
+        #print(autos[window:]) 
         #plt.plot(anded, label=f"{window=}")
-        plt.plot(autos, label=f"{window=}")
+        #plt.plot(autos, label=f"{window=}")
         anded = np.zeros_like(to_mc_arr, dtype=float)
-
-    plt.xscale("log")
-    plt.yscale("log")
-    plt.legend()
+        autos = np.zeros_like(to_mc_arr, dtype=float)
+    plt.plot(cs)
     plt.show()
+
+    #plt.xscale("log")
+    ##plt.yscale("log")
+    #plt.legend()
+    #plt.show()
             
