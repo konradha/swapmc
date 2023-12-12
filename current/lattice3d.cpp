@@ -378,7 +378,18 @@ int write_bool_array(bool *b, int size, std::ostream &file)
     return tf-t0;
 }
 
-int run(float b=2., float rho=.45, int nstep=10000)
+void print_sites(Lattice *L)
+{
+    for (int i=0;i<L->num_sites;++i)
+    {
+        if (L->grid[i].spin == Spin::red) std::cout << 2 << " ";
+        else if (L->grid[i].spin == Spin::blue) std::cout << 1 << " "; 
+        else std::cout << 0 << " ";
+    }
+    std::cout << "\n";
+}
+
+int run(float b=2., float rho=.45, int nstep=10000, float swap_proba=.2)
 {
     std::random_device rd;
     std::mt19937 gen(__rdtsc());
@@ -404,8 +415,8 @@ int run(float b=2., float rho=.45, int nstep=10000)
     
     int nsteps = nstep;
 
-    auto fname = "data.dat";
-    std::ofstream out(fname, std::ios::binary);
+    //auto fname = "data.dat";
+    //std::ofstream out(fname, std::ios::binary);
 
     int calc_time, write_time; 
     calc_time = write_time = 0;
@@ -413,20 +424,15 @@ int run(float b=2., float rho=.45, int nstep=10000)
     int from_mc, to_mc;
     int from_swap, to_swap;
 
-    for (int i=0;i<L.num_sites;++i)
-    {
-        if (L.grid[i].spin == Spin::red) std::cout << 2 << " ";
-        else if (L.grid[i].spin == Spin::blue) std::cout << 1 << " "; 
-        else std::cout << 0 << " ";
-    }
-    std::cout << "\n";
+    print_sites(&L); 
+
+    
+    std::vector<std::tuple<int, int> > mc_moves;
+    std::vector<std::tuple<int, int> > swap_moves;
+    mc_moves.reserve(nsteps); swap_moves.reserve(nsteps);
 
     for (int i=0; i<nsteps;++i)
-    {
-
-        // TODO: rewrite: one thread producing data, one writing to disk. autocorrelations after.
-        //       see note.
-        //auto ac = autocorr_simple(tmp1, tmp2, configs_red, configs_blue, &L, i, autocorr_window); 
+    { 
         // TODO: introduce pragmas for different compilation targets:
         // 1. simple simulation
         // 2. with positions
@@ -435,16 +441,23 @@ int run(float b=2., float rho=.45, int nstep=10000)
         from_mc = to_mc = -1;
         from_swap = to_swap = -1;
 
-        auto t_c0 = __rdtsc();
-        auto e = energy(&L); auto epp = e / L.num_spins;
+        //auto t_c0 = __rdtsc();
+        //auto e = energy(&L); auto epp = e / L.num_spins;
         
+         
         std::tie(from_mc,to_mc) = mc_step(&L);
-        if (dis(gen) <= .12) std::tie(from_swap, to_swap) = swap_step(&L); 
-        auto t_cf = __rdtsc();
-        calc_time += (t_cf - t_c0);
+        mc_moves.push_back({from_mc, to_mc});
+        if (dis(gen) <= swap_proba) std::tie(from_swap, to_swap) = swap_step(&L);
+        swap_moves.push_back({from_swap, to_swap});
 
-        std::cout << i << "," << e << "," <<epp << "," << from_mc << "," << to_mc << "," 
-                  << from_swap << "," << to_swap << "\n";
+        //if (dis(gen) <= swap_proba) std::tie(from_swap, to_swap) = swap_step(&L); 
+        //auto t_cf = __rdtsc();
+        //calc_time += (t_cf - t_c0);
+
+        //std::cout << i << "," << e << "," <<epp << "," << from_mc << "," << to_mc << "," 
+        //          << from_swap << "," << to_swap << "\n";
+
+        
 
         // write configuration to disk
         //out.write(&i, sizeof(&i));
@@ -455,7 +468,19 @@ int run(float b=2., float rho=.45, int nstep=10000)
         //t_w += write_bool_array(L.blue, L.num_sites, out);
         //write_time += t_w;
     }
-    out.close();
+
+    for(int i=0;i<nsteps;++i)
+    {
+        std::tie(from_mc, to_mc) = mc_moves[i];
+        std::tie(from_swap, to_swap) = swap_moves[i];
+        std::cout << i << "," << from_mc << "," << to_mc << ","
+                  << from_swap << "," << to_swap << "\n"; 
+    }
+
+
+    //auto fname = "data.dat";
+    //std::ofstream out(fname, std::ios::binary);
+    //out.close();
 
     //std::cout << "calc time total:  " << calc_time << "\n";
     //std::cout << "write time total: " << write_time << "\n";
@@ -476,19 +501,21 @@ int run(float b=2., float rho=.45, int nstep=10000)
 
 int main(int argc, char **argv)
 {
-    if (argc != 4)
+    if (argc != 5)
     {
-        run(2.,.75,10);
-        std::cout << "args (order): temperature, density, #sweeps\n";
+        run(2.,.75,10, .2);
+        std::cout << "args (order): temperature, density, #sweeps, swap probability\n";
     }
     else
     {
         auto arg_beta = argv[1];
         auto arg_rho  = argv[2];
         auto nsteps   = argv[3];
+        auto swap_prb = argv[4];
         auto beta = atof(arg_beta);
         auto rho  = atof(arg_rho);
         auto stps = atof(nsteps);
-        run(beta, rho, stps);
+        auto draw = atof(swap_prb);
+        run(beta, rho, stps, draw);
     }
 }
