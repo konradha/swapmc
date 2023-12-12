@@ -122,7 +122,7 @@ float energy(Lattice *L) {
   return E;
 }
 
-int run(float b = 2., float rho = .45, int nstep = 10000,
+int run(float b = 2., float rho = .45, int nstep = 10000, int xstep=10000,
         float swap_proba = .2) {
   std::random_device rd;
   std::mt19937 gen(__rdtsc());
@@ -149,6 +149,8 @@ int run(float b = 2., float rho = .45, int nstep = 10000,
   mc_moves.reserve(nsteps);
   swap_moves.reserve(nsteps);
 
+  for( int i=0;i<xstep;++i) mc_step(&L); 
+
   for (int i = 0; i < nsteps; ++i) {
 
     from_mc = to_mc = -1;
@@ -167,18 +169,20 @@ int run(float b = 2., float rho = .45, int nstep = 10000,
 
 int main(int argc, char **argv) {
   if (argc != 5) {
-    run(2., .75, 10, .2);
+    run(2., .75, 10, 10, .2);
     std::cout
-        << "args (order): temperature, density, #sweeps, swap probability\n";
+        << "args (order): temperature, density, #sweeps, #thermalization sweeps, swap probability\n";
   } else {
     auto arg_beta = argv[1];
     auto arg_rho = argv[2];
     auto nsteps = argv[3];
-    auto swap_prb = argv[4];
+    auto xsteps = argv[4];
+    auto swap_prb = argv[5];
     auto beta = atof(arg_beta);
     auto rho = atof(arg_rho);
     auto stps = atof(nsteps);
+    auto xtps = atof(xsteps);
     auto draw = atof(swap_prb);
-    run(beta, rho, stps, draw);
+    run(beta, rho, stps, xtps, draw);
   }
 }

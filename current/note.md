@@ -91,5 +91,7 @@ end while
 
 ## TODO 4
 - regenerate data: temps .1 .5 1. 1.5 2. 2.5 3. 3.5 and swap .1 with some amount of sweeps
+- try to reproduce fig 2a
 - burn-in as parameter
-- see what else could be going wrong
+- write tests
+- introduce sampling with some cutoff around a point
