@@ -77,8 +77,10 @@ void finalize(Lattice *L, int nsteps, int *pref,
   for (int i = 0; i < nsteps; ++i) {
     std::tie(metropolis_epoch, from_mc, to_mc) = mc_moves[i];
     std::tie(swap_epoch, from_swap, to_swap) = swap_moves[i];
+    if (from_mc == -1 && from_swap == -1) continue;  
     std::cout << i << "," << from_mc << "," << to_mc << "," << from_swap << ","
               << to_swap << "\n";
+     
   }
   free(pref);
   free(L->grid);
