@@ -1,4 +1,4 @@
-#include "structs.h"
+#include "lattice.h"
 
 #include <cassert>
 #include <cmath>
@@ -233,8 +233,8 @@ std::tuple<int, int> mc_step(Lattice *L) {
   std::uniform_int_distribution<> dis(0, 5);
 
   auto mv = sample(L->vacant, L->num_sites, L->num_red + L->num_blue,
-                   neg()); // get one of the particles
-  auto to = dis(gen);      // get one neighbor
+                   neg());                   // get one of the particles
+  auto to = L->grid[mv].neighbors[dis(gen)]; // get one neighbor
   if (L->grid[to].spin != Spin::empty)
     return {-1, -1}; // cannot move as it's occupied
 
@@ -332,8 +332,8 @@ int run(float b = 2., float rho = .45, int nstep = 10000,
       std::tie(from_swap, to_swap) = swap_step(&L);
     swap_moves.push_back({i, from_swap, to_swap});
   }
-
-  finalize(&L, nsteps, pref, mc_moves, swap_moves);
+  bool print_it = true;
+  finalize(&L, nsteps, pref, mc_moves, swap_moves, print_it);
   return 0;
 }
 
