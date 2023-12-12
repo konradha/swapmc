@@ -168,7 +168,7 @@ int run(float b = 2., float rho = .45, int nstep = 10000, int xstep=10000,
 }
 
 int main(int argc, char **argv) {
-  if (argc != 5) {
+  if (argc != 6) {
     run(2., .75, 10, 10, .2);
     std::cout
         << "args (order): temperature, density, #sweeps, #thermalization sweeps, swap probability\n";
