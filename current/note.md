@@ -88,3 +88,8 @@ end while
 
 ## TODO 3
 - only print out particle moves if != -1 -> lot less data seeing the graphs, no matter the temperature
+
+## TODO 4
+- regenerate data: temps .1 .5 1. 1.5 2. 2.5 3. 3.5 and swap .1 with some amount of sweeps
+- burn-in as parameter
+- see what else could be going wrong
