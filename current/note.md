@@ -85,3 +85,6 @@ end while
 
 ## TODO 2
 - check if moves are printed correctly (do better: print arrays at the end to avoid IO)
+
+## TODO 3
+- only print out particle moves if != -1 -> lot less data seeing the graphs, no matter the temperature
