@@ -125,58 +125,71 @@ int main(int argc, char **argv)
     for (int i=0;i<N*N*N;++i)t[i]=-1;
 
     
-#pragma omp parallel for
-    for (int i=0;i< N * N * N; i+=omp_get_num_threads()) // assume two threads for now, may vary
-    {
-                
-        std::array<std::tuple<int, int, int>, 6> my_neighbors;
+//#pragma omp parallel for
+//    for (int i=0;i< N * N * N; i+=omp_get_num_threads()) // assume two threads for now, may vary
+//    {
+//                
+//        std::array<std::tuple<int, int, int>, 6> my_neighbors;
+//        if (t[i + omp_get_thread_num()] != -1) continue;
+//        auto [x, y, z] = revert(i + omp_get_thread_num(), N); 
+//        // left (with PBC, inner), then right (with PBC, inner)
+//        if (x == 0)   my_neighbors[0]  = {N-1, y, z};
+//        if (x > 0)    my_neighbors[0]  = {x-1, y, z};
+//        if (x == N-1) my_neighbors[1]  = {0, y, z};
+//        if (x < N-1)  my_neighbors[1]  = {x+1, y, z};
+//
+//        if (y == 0)    my_neighbors[2] = {x, N-1, z};
+//        if (y > 0)     my_neighbors[2] = {x, y-1, z};
+//        if (y == N-1)  my_neighbors[3] = {x, 0, z};
+//        if (y < N-1)   my_neighbors[3] = {x, y+1, z};
+//
+//        if (z == 0)   my_neighbors[4]  = {x, y, N-1};
+//        if (z > 0)    my_neighbors[4]  = {x, y, z-1};
+//        if (z < N-1)  my_neighbors[5]  = {x, y, z+1};
+//        if (z == N-1) my_neighbors[5]  = {x, y, 0};
+//
+//        for(int j=0;j<6;++j) t[convert(my_neighbors[j])] = omp_get_thread_num(); 
+//
+//        t[i + omp_get_thread_num()] = 0;
+//
+//    }
 
-        if (omp_get_thread_num() == 0)
-        {
-            if (t[i] != -1) continue;
-            auto [x, y, z] = revert(i, N); 
-            // left (with PBC, inner), then right (with PBC, inner)
-            if (x == 0)   my_neighbors[0]  = {N-1, y, z};
-            if (x > 0)    my_neighbors[0]  = {x-1, y, z};
-            if (x == N-1) my_neighbors[1]  = {0, y, z};
-            if (x < N-1)  my_neighbors[1]  = {x+1, y, z};
+#pragma omp for collapse(3)
+    for(int i=0;i<N;i+=2)
+        for(int j=0;j<N;j+=2)
+            for(int k=0;k<N;k+=2)
+            {
+                auto tup = std::make_tuple(i,j,k);
+                int idx = convert(tup, N); 
+                //int left, right, up, down, front, back;
+                //left = (i-1+N) % N; right = (i+1) % N;
+                //down = (j-1+N)%N; up = (j+1)%N;
+                //back = (k-1+N)%N; front = (k+1)%N;
 
-            if (y == 0)    my_neighbors[2] = {x, N-1, z};
-            if (y > 0)     my_neighbors[2] = {x, y-1, z};
-            if (y == N-1)  my_neighbors[3] = {x, 0, z};
-            if (y < N-1)   my_neighbors[3] = {x, y+1, z};
+                int x,y,z; x=i;y=j;z=k;
+                std::array<std::tuple<int, int, int>, 6> my_neighbors;
+                if (t[idx + omp_get_thread_num()] != -1) continue; 
+                // left (with PBC, inner), then right (with PBC, inner)
+                if (x == 0)   my_neighbors[0]  = {N-1, y, z};
+                if (x > 0)    my_neighbors[0]  = {x-1, y, z};
+                if (x == N-1) my_neighbors[1]  = {0, y, z};
+                if (x < N-1)  my_neighbors[1]  = {x+1, y, z};
 
-            if (z == 0)   my_neighbors[4]  = {x, y, N-1};
-            if (z > 0)    my_neighbors[4]  = {x, y, z-1};
-            if (z < N-1)  my_neighbors[5]  = {x, y, z+1};
-            if (z == N-1) my_neighbors[5]  = {x, y, 0};
+                if (y == 0)    my_neighbors[2] = {x, N-1, z};
+                if (y > 0)     my_neighbors[2] = {x, y-1, z};
+                if (y == N-1)  my_neighbors[3] = {x, 0, z};
+                if (y < N-1)   my_neighbors[3] = {x, y+1, z};
 
-            for(int j=0;j<6;++j) t[convert(my_neighbors[j])] = omp_get_thread_num(); 
+                if (z == 0)   my_neighbors[4]  = {x, y, N-1};
+                if (z > 0)    my_neighbors[4]  = {x, y, z-1};
+                if (z < N-1)  my_neighbors[5]  = {x, y, z+1};
+                if (z == N-1) my_neighbors[5]  = {x, y, 0};
 
-            t[i] = 0;
-        } else {
-            if (t[i+1] != -1) continue;
-            auto [x, y, z] = revert(i+1, N); 
-            // left (with PBC, inner), then right (with PBC, inner)
-            if (x == 0)   my_neighbors[0]  = {N-1, y, z};
-            if (x > 0)    my_neighbors[0]  = {x-1, y, z};
-            if (x == N-1) my_neighbors[1]  = {0, y, z};
-            if (x < N-1)  my_neighbors[1]  = {x+1, y, z};
+                for(int jj=0;jj<6;++jj) t[convert(my_neighbors[jj])] = omp_get_thread_num(); 
 
-            if (y == 0)    my_neighbors[2] = {x, N-1, z};
-            if (y > 0)     my_neighbors[2] = {x, y-1, z};
-            if (y == N-1)  my_neighbors[3] = {x, 0, z};
-            if (y < N-1)   my_neighbors[3] = {x, y+1, z};
+                t[idx] = omp_get_thread_num();
 
-            if (z == 0)   my_neighbors[4]  = {x, y, N-1};
-            if (z > 0)    my_neighbors[4]  = {x, y, z-1};
-            if (z < N-1)  my_neighbors[5]  = {x, y, z+1};
-            if (z == N-1) my_neighbors[5]  = {x, y, 0};
-
-            for(int j=0;j<6;++j) t[convert(my_neighbors[j])] = omp_get_thread_num();
-            t[i+1] = omp_get_thread_num();
-        }
-    }
+            }
 
     //for (int i=N * (10 + N);i< N * (20 + 2*N);++i) std::cout << t[i] << " ";
     for (int i=0;i< N *N*N;++i) std::cout << ((i%(N*N)==0)? "\n" : "") <<  t[i] << " ";
