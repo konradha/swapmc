@@ -112,45 +112,79 @@ int main(int argc, char **argv)
     //std::cout << k << "?=" << kkk << "\n";
 
 
-    int N = 30;
+    const int N = 30;
 
-    auto grid = (int *) calloc(sizeof(int), N * N * N);
-    for (int i=0;i< N * N * N; ++i)
-    {
-        if (i %2 != 0) grid[i] = 1;
-        else grid[i] = 2;
-    }
+    //auto grid = (int *) calloc(sizeof(int), N * N * N);
+    //for (int i=0;i< N * N * N; ++i)
+    //{
+    //    if (i %2 != 0) grid[i] = 1;
+    //    else grid[i] = 2;
+    //}
 
-    int t[20] = {0, 0};
+    int t[N*N*N] = {-1};
+    for (int i=0;i<N*N*N;++i)t[i]=-1;
 
     
 #pragma omp parallel for
-    for (int i=0;i< N * N * N; i+=3)
+    for (int i=0;i< N * N * N; i+=omp_get_num_threads()) // assume two threads for now, may vary
     {
-        auto [x, y, z] = revert(i, N);        
+                
         std::array<std::tuple<int, int, int>, 6> my_neighbors;
- 
-        // left (with PBC, inner), then right (with PBC, inner)
-        if (x == 0)   my_neighbors[0]  = {N-1, y, z};
-        if (x > 0)    my_neighbors[0]  = {x-1, y, z};
-        if (x == N-1) my_neighbors[1]  = {0, y, z};
-        if (x < N-1)  my_neighbors[1]  = {x+1, y, z};
 
-        if (y == 0)    my_neighbors[2] = {x, N-1, z};
-        if (y > 0)     my_neighbors[2] = {x, y-1, z};
-        if (y == N-1)  my_neighbors[3] = {x, 0, z};
-        if (y < N-1)   my_neighbors[3] = {x, y+1, z};
+        if (omp_get_thread_num() == 0)
+        {
+            if (t[i] != -1) continue;
+            auto [x, y, z] = revert(i, N); 
+            // left (with PBC, inner), then right (with PBC, inner)
+            if (x == 0)   my_neighbors[0]  = {N-1, y, z};
+            if (x > 0)    my_neighbors[0]  = {x-1, y, z};
+            if (x == N-1) my_neighbors[1]  = {0, y, z};
+            if (x < N-1)  my_neighbors[1]  = {x+1, y, z};
 
-        if (z == 0)   my_neighbors[4]  = {x, y, N-1};
-        if (z > 0)    my_neighbors[4]  = {x, y, z-1};
-        if (z < N-1)  my_neighbors[5]  = {x, y, z+1};
-        if (z == N-1) my_neighbors[5]  = {x, y, 0};
-        t[omp_get_thread_num()] += 1;
-        
-        //print_nn(my_neighbors, omp_get_thread_num()); 
+            if (y == 0)    my_neighbors[2] = {x, N-1, z};
+            if (y > 0)     my_neighbors[2] = {x, y-1, z};
+            if (y == N-1)  my_neighbors[3] = {x, 0, z};
+            if (y < N-1)   my_neighbors[3] = {x, y+1, z};
+
+            if (z == 0)   my_neighbors[4]  = {x, y, N-1};
+            if (z > 0)    my_neighbors[4]  = {x, y, z-1};
+            if (z < N-1)  my_neighbors[5]  = {x, y, z+1};
+            if (z == N-1) my_neighbors[5]  = {x, y, 0};
+
+            for(int j=0;j<6;++j) t[convert(my_neighbors[j])] = omp_get_thread_num(); 
+
+            t[i] = 0;
+        } else {
+            if (t[i+1] != -1) continue;
+            auto [x, y, z] = revert(i+1, N); 
+            // left (with PBC, inner), then right (with PBC, inner)
+            if (x == 0)   my_neighbors[0]  = {N-1, y, z};
+            if (x > 0)    my_neighbors[0]  = {x-1, y, z};
+            if (x == N-1) my_neighbors[1]  = {0, y, z};
+            if (x < N-1)  my_neighbors[1]  = {x+1, y, z};
+
+            if (y == 0)    my_neighbors[2] = {x, N-1, z};
+            if (y > 0)     my_neighbors[2] = {x, y-1, z};
+            if (y == N-1)  my_neighbors[3] = {x, 0, z};
+            if (y < N-1)   my_neighbors[3] = {x, y+1, z};
+
+            if (z == 0)   my_neighbors[4]  = {x, y, N-1};
+            if (z > 0)    my_neighbors[4]  = {x, y, z-1};
+            if (z < N-1)  my_neighbors[5]  = {x, y, z+1};
+            if (z == N-1) my_neighbors[5]  = {x, y, 0};
+
+            for(int j=0;j<6;++j) t[convert(my_neighbors[j])] = omp_get_thread_num();
+            t[i+1] = omp_get_thread_num();
+        }
     }
 
-#pragma omp parallel for
-    for (int i=0;i<omp_get_num_threads();++i)
-        std::cout << "thread " << i << "=" << t[i] << "\n";
+    //for (int i=N * (10 + N);i< N * (20 + 2*N);++i) std::cout << t[i] << " ";
+    for (int i=0;i< N *N*N;++i) std::cout << ((i%(N*N)==0)? "\n" : "") <<  t[i] << " ";
+    // THIS HERE should give a nice 3d "checkerboard" that can tell us then if the parallelization strategy is actually
+    // working
+    std::cout << "\n";
+
+//#pragma omp parallel for
+//    for (int i=0;i<omp_get_num_threads();++i)
+//        std::cout << "thread " << i << "=" << t[i] << "\n";
 }
