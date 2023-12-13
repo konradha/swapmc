@@ -1,6 +1,7 @@
 #include <cassert>
 #include <iostream>
 #include <random>
+#include <ranges>
 #include <stdlib.h>
 #include <tuple>
 #include <vector>

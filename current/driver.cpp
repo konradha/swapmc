@@ -1,6 +1,10 @@
 #include "lattice.h"
 #include <cmath>
 #include <stdexcept>
+#include <omp.h>
+
+
+#include <algorithm>
 
 
 template <Spin spin> void move(Lattice *L, int from, int to);
@@ -57,12 +61,11 @@ std::tuple<int, int> mc_step(Lattice *L) {
   // this now is a local-only move
   std::random_device rd;
   std::mt19937 gen(rd());
-  // std::uniform_real_distribution<> dis(0.0, 1.0);
   std::uniform_int_distribution<> dis(0, 5);
 
   auto mv = sample(L->vacant, L->num_sites, L->num_red + L->num_blue,
                    neg());                   // get one of the particles
-  auto to = L->grid[mv].neighbors[dis(gen)]; // get one neighbor
+  auto to = L->grid[mv].neighbors[dis(gen)]; // get one neighbor 
   if (L->grid[to].spin != Spin::empty)
     return {-1, -1}; // cannot move as it's occupied
 
@@ -132,11 +135,47 @@ void dump_data(std::vector<std::tuple<int, int>> &metro_moves,
     for (int i = 0; i < n; ++i) {
       std::tie(from_mc, to_mc) = metro_moves[i];
       std::tie(from_swap, to_swap) = swap_moves[i];
-      std::cout << i << "," << from_mc << "," << to_mc << "," << from_swap
+      std::cout << from_mc << "," << to_mc << "," << from_swap
                 << "," << to_swap << "\n";
     }
     metro_moves.clear(); swap_moves.clear();
     metro_moves.reserve(n); swap_moves.reserve(n);
+}
+
+void fully_local_move(Lattice *L, std::vector<std::tuple<int, int>> &mc_moves)
+{
+    std::random_device rd;
+    std::mt19937 gen(rd());  
+    std::uniform_int_distribution<> dis(0, 5);
+    std::uniform_real_distribution<> dis_real(0., 1.);
+    int nb = -1;
+    float E1, E2, dE;
+    int site;
+
+    // reshuffle indices
+    auto view = std::views::iota(0, L->num_sites);
+    std::vector<int> indices(std::begin(view), std::end(view));
+    std::ranges::shuffle(indices, gen);
+
+    for(auto s = indices.begin(); s != indices.end(); ++s)
+    {
+       site = *s;
+       if (L->grid[site].spin == Spin::empty) continue; // cannot move empty particle
+       nb = L->grid[site].neighbors[dis(gen)];
+       if (L->grid[nb].spin != Spin::empty) continue; // cannote move where there's a neighbor
+       std::tie(E1, E2) = flip_and_calc(L, site, nb);
+       dE = E2 - E1;
+       if (dis_real(gen) < std::exp(-L->beta * dE))
+       {
+            move(L, site, nb);
+            mc_moves.push_back({site, nb});
+       } else 
+       {
+           mc_moves.push_back({-1, -1}); 
+       }
+    }
+
+    return;
 }
 
 int run(float b = 2., float rho = .45, int nstep = 10000, int xstep=10000,
@@ -167,26 +206,28 @@ int run(float b = 2., float rho = .45, int nstep = 10000, int xstep=10000,
   mc_moves.reserve(rsv);
   swap_moves.reserve(rsv);
 
-  // THERMALIZE
-  for( int i=0;i<xstep;++i) mc_step(&L); 
+  //// THERMALIZE
+  //for( int i=0;i<xstep;++i) mc_step(&L); 
 
-  print_sites(&L);
+  //print_sites(&L);
   // SAMPLE LOOP
   for (int i = 0; i < nsteps; ++i) {
+    fully_local_move(&L, mc_moves);
+    //from_mc = to_mc = -1;
+    //from_swap = to_swap = -1;
 
-    from_mc = to_mc = -1;
-    from_swap = to_swap = -1;
-
-    std::tie(from_mc, to_mc) = mc_step(&L);
-    mc_moves.push_back({from_mc, to_mc});
-    if (dis(gen) <= swap_proba)
-      std::tie(from_swap, to_swap) = swap_step(&L);
-    swap_moves.push_back({from_swap, to_swap});
-    if (i > 0 && i % rsv == 0)
-        dump_data(mc_moves, swap_moves, rsv);
+    //std::tie(from_mc, to_mc) = mc_step(&L);
+    //mc_moves.push_back({from_mc, to_mc});
+    //if (dis(gen) <= swap_proba)
+    //  std::tie(from_swap, to_swap) = swap_step(&L);
+    //swap_moves.push_back({from_swap, to_swap});
+    //if (i > 0 && i % rsv == 0)
+    //    dump_data(mc_moves, swap_moves, rsv);
 
   }
-  bool print_it = true;
+  std::cout << "there are " << mc_moves.size() << " local moves saved\n";
+  //std::cout << "made " << L.num_sites - std::count_if(mc_moves.begin(), mc_moves.end(), [](const std::tuple<int,int>& t){ return std::get<0>(t) == -1 && std::get<1>(t) == -1; }) << " local moves\n";
+  bool print_it = false;
   finalize(&L, nsteps, pref, mc_moves, swap_moves, print_it);
   return 0;
 }
