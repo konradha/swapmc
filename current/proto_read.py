@@ -35,7 +35,7 @@ def energy(grid, N, pref=[0, 3, 5],):
     for i, j, k in product(range(N), range(N), range(N)):
         pi = grid[i, j, k] * np.ones(6).astype(int)
         neighbors = np.array([
-
+            # this should be a parallel stencil ...
             grid[(i+1) % N, j, k], grid[(i-1) % N, j, k],
             grid[i, (j+1) % N, k], grid[i, (j-1) % N, k],
             grid[i, j, (k+1) % N], grid[i, j, (k-1) % N],
@@ -52,7 +52,7 @@ def energy(grid, N, pref=[0, 3, 5],):
 
 if __name__ == '__main__':
     fname = str(sys.argv[1])
-    window = int(sys.argv[2])
+
     N = 30
     pref = [0, 3, 5] # neighbor preferences
     grid_raw = None 
@@ -76,28 +76,28 @@ if __name__ == '__main__':
 
 
     starting_grid = deepcopy(grid) 
-    walking_grid = deepcopy(grid)
-
-    d = []
-    for i, e in tqdm(enumerate(epochs)):
-        from_mc, to_mc = from_mcs[i], to_mcs[i]
-        from_sw, to_sw = from_swp[i], to_swp[i]
-        update_grid(grid, from_mc, to_mc, from_sw, to_sw, N) 
-        if i % 10000 == 0:
-            d.append(np.mean(energy(grid, N)))
-    print(d)
-    plt.plot((d))
-    plt.show()
+    #walking_grid = deepcopy(grid)
     
-    """
-        if i > window:
-            from_mc_l, to_mc_l = from_mcs[i-window], to_mcs[i-window]  
-            from_sw_l, to_sw_l = from_swp[i-window], to_swp[i-window]
-            update_grid(walking_grid, from_mc_l, to_mc_l, from_sw_l, to_sw_l, N)
-            d.append(measure(walking_grid, grid))
-        else:
-            d.append(measure(starting_grid, grid,))
-    d = np.array(d)
-    save_f = f"{fname}_cum_{window}.txt"
-    np.savetxt(save_f, d, delimiter=',')
-    """
+    for window in tqdm([10 ** i for i in range(8)]):
+        if window > len(epochs) // 2: break
+
+        d = []
+        grid = deepcopy(starting_grid)
+        walking_grid = deepcopy(starting_grid)
+
+        for i, e in enumerate(epochs):
+            from_mc, to_mc = from_mcs[i], to_mcs[i]
+            from_sw, to_sw = from_swp[i], to_swp[i]
+            update_grid(grid, from_mc, to_mc, from_sw, to_sw, N) 
+            if i > window:
+                from_mc_l, to_mc_l = from_mcs[i-window], to_mcs[i-window]  
+                from_sw_l, to_sw_l = from_swp[i-window], to_swp[i-window]
+                update_grid(walking_grid, from_mc_l, to_mc_l, from_sw_l, to_sw_l, N)
+                d.append(measure(walking_grid, grid))
+            else:
+                d.append(measure(starting_grid, grid,))
+        d = np.array(d)
+        save_f = f"{fname}_corr_{window}.txt"
+        np.savetxt(save_f, d, delimiter=',')
+
+        

@@ -122,6 +122,23 @@ float energy(Lattice *L) {
   return E;
 }
 
+void dump_data(std::vector<std::tuple<int, int>> &metro_moves,
+               std::vector<std::tuple<int, int>> &swap_moves,
+               int n)
+{
+    int  from_mc, to_mc, from_swap, to_swap;
+    from_mc = to_mc = from_swap =  to_swap = -1;
+
+    for (int i = 0; i < n; ++i) {
+      std::tie(from_mc, to_mc) = metro_moves[i];
+      std::tie(from_swap, to_swap) = swap_moves[i];
+      std::cout << i << "," << from_mc << "," << to_mc << "," << from_swap
+                << "," << to_swap << "\n";
+    }
+    metro_moves.clear(); swap_moves.clear();
+    metro_moves.reserve(n); swap_moves.reserve(n);
+}
+
 int run(float b = 2., float rho = .45, int nstep = 10000, int xstep=10000,
         float swap_proba = .2) {
   std::random_device rd;
@@ -144,23 +161,30 @@ int run(float b = 2., float rho = .45, int nstep = 10000, int xstep=10000,
   int from_mc, to_mc;
   int from_swap, to_swap;
 
-  std::vector<std::tuple<int, int, int>> mc_moves;
-  std::vector<std::tuple<int, int, int>> swap_moves;
-  mc_moves.reserve(nsteps);
-  swap_moves.reserve(nsteps);
+  size_t rsv = 1000000;
+  std::vector<std::tuple<int, int>> mc_moves;
+  std::vector<std::tuple<int, int>> swap_moves;
+  mc_moves.reserve(rsv);
+  swap_moves.reserve(rsv);
 
+  // THERMALIZE
   for( int i=0;i<xstep;++i) mc_step(&L); 
 
+  print_sites(&L);
+  // SAMPLE LOOP
   for (int i = 0; i < nsteps; ++i) {
 
     from_mc = to_mc = -1;
     from_swap = to_swap = -1;
 
     std::tie(from_mc, to_mc) = mc_step(&L);
-    mc_moves.push_back({i, from_mc, to_mc});
+    mc_moves.push_back({from_mc, to_mc});
     if (dis(gen) <= swap_proba)
       std::tie(from_swap, to_swap) = swap_step(&L);
-    swap_moves.push_back({i, from_swap, to_swap});
+    swap_moves.push_back({from_swap, to_swap});
+    if (i > 0 && i % rsv == 0)
+        dump_data(mc_moves, swap_moves, rsv);
+
   }
   bool print_it = true;
   finalize(&L, nsteps, pref, mc_moves, swap_moves, print_it);

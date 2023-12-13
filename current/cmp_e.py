@@ -1,18 +1,19 @@
 import numpy as np
 import sys
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
-# fname = swap_proba_cmp_1._.1_longer.txt_cum.txt
-# bash command:
-# for p in .05 .1 .15 .25; do for b in 1. 2. 3.; do python proto_read.py swap_proba_cmp_${b}_${p}_longer.txt
+fn = str(sys.argv[1])
+fnames = ["swap_proba_cmp_2._.1_max.txt", "swap_proba_cmp_3._.1_max.txt", "swap_proba_cmp_4._.1_max.txt"]
+windows = [10 **i for i in range(6)]
 
-for b in [".1", "9."]:# [".1", "1.", "2.", "3.", "9."]:
-    for p in [".1"]:# [".05", ".1", ".15", ".25"]:        
-        ws = []
-        for w in ["1", "10", "100", "1000"]:
-            fname = f"swap_proba_cmp_{b}_{p}_longer.txt_cum_{w}.txt" 
-            data  = np.loadtxt(fname, delimiter=',')
-            plt.plot(data, label=f"{b=} {w=}")
+for i, fstart in tqdm(enumerate(fnames)):
+    ds = []
+    for w in windows:
+        fname = f"{fstart}_corr_{w}.txt" 
+        data  = np.loadtxt(fname, delimiter=',')
+        ds.append(np.mean(data[w:]))
+    plt.plot(windows, ds, marker='x', linewidth=.3, label=f"beta={i+1}")
 
 plt.xscale("log")
 

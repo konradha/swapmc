@@ -79,19 +79,18 @@ void print_sites(Lattice *L) {
 }
 
 void finalize(Lattice *L, int nsteps, int *pref,
-              const std::vector<std::tuple<int, int, int>> &mc_moves,
-              const std::vector<std::tuple<int, int, int>> &swap_moves,
+              const std::vector<std::tuple<int, int>> &mc_moves,
+              const std::vector<std::tuple<int, int>> &swap_moves,
               const bool &print_it) {
   int from_mc, to_mc, from_swap, to_swap;
   from_mc = to_mc = from_swap = to_swap = -1;
 
   if (print_it) {
-    print_sites(L);
-    int metropolis_epoch = 0;
-    int swap_epoch = 0;
+    //int metropolis_epoch = 0;
+    //int swap_epoch = 0;
     for (int i = 0; i < nsteps; ++i) {
-      std::tie(metropolis_epoch, from_mc, to_mc) = mc_moves[i];
-      std::tie(swap_epoch, from_swap, to_swap) = swap_moves[i];
+      std::tie( from_mc, to_mc) = mc_moves[i];
+      std::tie( from_swap, to_swap) = swap_moves[i];
       // potential optimization: compress data that's saved
       // if (from_mc == -1 && from_swap == -1) continue;
       std::cout << i << "," << from_mc << "," << to_mc << "," << from_swap
