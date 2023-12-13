@@ -121,28 +121,36 @@ int main(int argc, char **argv)
         else grid[i] = 2;
     }
 
-    std::array<std::tuple<int, int, int>, 6> my_neighbors;
+    int t[20] = {0, 0};
+
+    
 #pragma omp parallel for
-    for (int i=0;i< N * N * N; ++i)
+    for (int i=0;i< N * N * N; i+=3)
     {
         auto [x, y, z] = revert(i, N);        
+        std::array<std::tuple<int, int, int>, 6> my_neighbors;
  
         // left (with PBC, inner), then right (with PBC, inner)
-        if (x == 0)   my_neighbors[0] = {N-1, y, z};
-        if (x > 0)    my_neighbors[0] = {x-1, y, z};
-        if (x == N-1) my_neighbors[1] = {0, y, z};
-        if (x < N-1)  my_neighbors[1] = {x+1, y, z};
+        if (x == 0)   my_neighbors[0]  = {N-1, y, z};
+        if (x > 0)    my_neighbors[0]  = {x-1, y, z};
+        if (x == N-1) my_neighbors[1]  = {0, y, z};
+        if (x < N-1)  my_neighbors[1]  = {x+1, y, z};
 
         if (y == 0)    my_neighbors[2] = {x, N-1, z};
         if (y > 0)     my_neighbors[2] = {x, y-1, z};
         if (y == N-1)  my_neighbors[3] = {x, 0, z};
         if (y < N-1)   my_neighbors[3] = {x, y+1, z};
 
-        if (z == 0)   my_neighbors[4] = {x, y, N-1};
-        if (z > 0)    my_neighbors[4] = {x, y, z-1};
-        if (z < N-1)  my_neighbors[5] = {x, y, z+1};
-        if (z == N-1) my_neighbors[5] = {x, y, 0};
+        if (z == 0)   my_neighbors[4]  = {x, y, N-1};
+        if (z > 0)    my_neighbors[4]  = {x, y, z-1};
+        if (z < N-1)  my_neighbors[5]  = {x, y, z+1};
+        if (z == N-1) my_neighbors[5]  = {x, y, 0};
+        t[omp_get_thread_num()] += 1;
         
-        print_nn(my_neighbors, omp_get_thread_num()); 
+        //print_nn(my_neighbors, omp_get_thread_num()); 
     }
+
+#pragma omp parallel for
+    for (int i=0;i<omp_get_num_threads();++i)
+        std::cout << "thread " << i << "=" << t[i] << "\n";
 }
