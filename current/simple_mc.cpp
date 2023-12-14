@@ -1,3 +1,8 @@
+//clang++-17 -pedantic -ffast-math -march=native -O3 -Wall -fopenmp -Wunknown-pragmas -fsanitize=address -lm -lstdc++ -std=c++20 simple_mc.cpp -o to_simple; time ./to_simple
+//
+//to benchmark
+//export OMP_PLACES=threads; clang++-17 -pg -pedantic -ffast-math -march=native -O3 -Wall -fopenmp -Wunknown-pragmas -fsanitize=address -lm -lstdc++ -std=c++20 simple_mc.cpp -o to_simple; time ./to_simple
+
 #include <algorithm>
 #include <cassert>
 #include <omp.h>
@@ -66,14 +71,13 @@ int build_lattice(int *grid, const int N, const int num_red, const int num_blue)
 }
 
 
-static inline void exchange(int *grid, const int N, const int site, const int to)
+static inline void exchange(int * __restrict grid, const int N, const int site, const int to)
 {
-    //std::swap(&grid[site], &grid[to]); <- redo
     auto tmp = grid[site]; grid[site] = grid[to];
     grid[to] = tmp;
 }
 
-static inline float local_energy(int *grid, const int N, const int i, const int j, const int k)
+static inline float local_energy(int * __restrict grid, const int& N, const int& i, const int& j, const int& k)
 {
     auto site = k + N * (j + N * i);    
     if (grid[site] == 0) return 0.;
@@ -105,7 +109,7 @@ static inline float local_energy(int *grid, const int N, const int i, const int 
 }
 
 
-void sweep(int *lattice, const int N, const float beta=1.)
+void sweep(int * __restrict lattice, const int N, const float beta=1.)
 {
     
     std::random_device rd;
@@ -117,17 +121,15 @@ void sweep(int *lattice, const int N, const float beta=1.)
     int ii,jj,kk; ii=jj=kk=0;
      
     for (ii=0;ii<3;++ii)
-    #pragma omp parallel for collapse(1) firstprivate(gen, dis, uni) 
+#pragma omp parallel for collapse(1) firstprivate(gen, dis, uni) 
                 for(int i=ii;i<N-3+1;i+=3)
                 { 
+//#pragma unroll(3)
                     for(int j=jj;j<N-3+1;++j)
                         for(int k=kk;k<N-3+1;++k)
                         {
      
-                               
-
                             int l,r,u,d,f,b; // left, right, up, down, front, back
-                                             // TODO check if all of these work // if there's missing
                             l = r = u = d = f = b = 0; 
                             if ( i == 0  ) {u = k + N * (j + (N-1) * N);}
                             if ( i == N-1) {d = k + N *  j            ;}
@@ -144,18 +146,19 @@ void sweep(int *lattice, const int N, const float beta=1.)
                             if ( k <N-1)   {b = k+1 + N * (j + i*N);}
 
                             
-                            assert(l >= 0 && l < N*N*N && "it's l");
-                            assert(r >= 0 && r < N*N*N && "it's r");
-                            assert(u >= 0 && u < N*N*N && "it's u");
-                            assert(d >= 0 && d < N*N*N && "it's d");
-                            assert(f >= 0 && f < N*N*N && "it's f");
-                            assert(b >= 0 && b < N*N*N && "it's b");
+                            //assert(l >= 0 && l < N*N*N && "it's l");
+                            //assert(r >= 0 && r < N*N*N && "it's r");
+                            //assert(u >= 0 && u < N*N*N && "it's u");
+                            //assert(d >= 0 && d < N*N*N && "it's d");
+                            //assert(f >= 0 && f < N*N*N && "it's f");
+                            //assert(b >= 0 && b < N*N*N && "it's b");
 
                             float E1 = local_energy(lattice, N, i, j, k);
                             int nn[6] = {u,d,l,r,f,b};
                             auto mv = nn[dis(gen)];
                             exchange(lattice, N, k + N*(j + i*N), mv);
                             float E2 = local_energy(lattice, N, i, j, k);
+                           
                             float dE = E2 - E1; 
                             if (uni(gen) < std::exp(-beta * dE)) continue;  
                             exchange(lattice, N, mv, k + N*(j + i*N)); 
@@ -163,7 +166,7 @@ void sweep(int *lattice, const int N, const float beta=1.)
                 }
 }
 
-void sweep_single(int *lattice, const int N, const float beta=1.)
+void sweep_single(int * __restrict lattice, const int N, const float beta=1.)
 {
     
     std::random_device rd;
@@ -175,7 +178,7 @@ void sweep_single(int *lattice, const int N, const float beta=1.)
     int ii,jj,kk; ii=jj=kk=0;
      
      
-    for(int i=0;i<N;++i)
+    for(int i=ii;i<N;++i)
     { 
         for(int j=jj;j<N;++j)
             for(int k=kk;k<N;++k)
@@ -219,10 +222,21 @@ void sweep_single(int *lattice, const int N, const float beta=1.)
     }
 }
 
+float energy(int * __restrict lattice, const int &N)
+{
+    float e = 0.;
+#pragma omp parallel for collapse(3) reduction (+:e)
+    for (int i=0;i<N;++i)
+        for(int j=0;j<N;++j)
+            for(int k=0;k<N;++k)
+                e += local_energy(lattice, N, i, j, k);
+    return e;
+}
+
 int main()
 {
     int N=30;
-    int r=1000; int b=100;
+    int r=12000; int b=5000;
 
     int *lattice = nullptr;
     const unsigned int align = 64;
@@ -242,7 +256,7 @@ int main()
     }
     std::cout << "single core implementation: " << singles / nsteps / 1e6 << "\n";
 
-    for (int i=1;i<9;++i)
+    for (int i=1;i<13;++i)
     {
         float curr = 0.;
         omp_set_num_threads(i);        
@@ -255,6 +269,22 @@ int main()
         }
         std::cout << "OMP with " << i << " cores: " << curr / nsteps / 1e6 << "\n";
     }
+
+    std::cout << "FINAL ROUND\n";
+    omp_set_num_threads(10);        
+    float curr = 0.;
+    nsteps = 1000000;
+    for (int i=0;i<nsteps;++i)
+    {
+        auto t0 = __rdtsc();
+        sweep(lattice, N);
+        auto tf = __rdtsc();
+        curr += tf - t0;
+        if ( i % 10000 == 0) std::cout << energy(lattice, N) / (N*N*N) << "\n";
+    }
+    std::cout << nsteps << "epochs\n";
+    std::cout << "OMP with " << 10 << " cores: " << curr / nsteps / 1e6 << "\n";
+
     free(lattice);
     
 }
