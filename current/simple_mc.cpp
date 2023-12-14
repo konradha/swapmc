@@ -139,6 +139,91 @@ static inline float local_energy(int *__restrict grid, const int &N,
   return current * current;
 }
 
+void sweep_complete(int *__restrict lattice, const int N, const float beta = 1.) {
+
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<> dis(0, 5);
+  std::uniform_real_distribution<> uni(0., 1.);
+
+  int ii, jj, kk;
+  ii = jj = kk = 0;
+
+  for (ii = 0; ii < 3; ++ii) // distance at which there is
+                             // no race between threads
+                             // -> kind of a checkerboard flip
+#pragma omp parallel for collapse(1) firstprivate(gen, dis, uni)
+    for (int i = ii; i < N - 3 + 1; i += 3) {
+      //#pragma unroll(3)
+      for (int j = jj; j < N - 3 + 1; ++j)
+        for (int k = kk; k < N - 3 + 1; ++k) {
+          const auto site  = k + N * (j + i * N);
+          // TODO actually fill out all surrounding ones -- else we're always leaving 
+          // some sites on the table
+          const auto site2 = k + N * (j+1 + (i+2) * N);
+          int l, r, u, d, f, b; // left, right, up, down, front, back
+          l = r = u = d = f = b = 0;
+          if (i == 0) {
+            u = k + N * (j + (N - 1) * N);
+          }
+          if (i == N - 1) {
+            d = k + N * j;
+          }
+          if (j == 0) {
+            l = k + N * ((N - 1) + i * N);
+          }
+          if (j == N - 1) {
+            r = k + N * (i * N);
+          }
+          if (k == 0) {
+            f = N - 1 + N * (j + i * N);
+          }
+          if (k == N - 1) {
+            b = N * (j + i * N);
+          }
+
+          if (i > 0) {
+            u = k + N * (j + (i - 1) * N);
+          }
+          if (i < N - 1) {
+            d = k + N * (j + (i + 1) * N);
+          }
+          if (j > 0) {
+            l = k + N * (j - 1 + i * N);
+          }
+          if (j < N - 1) {
+            r = k + N * (j + 1 + i * N);
+          }
+          if (k > 0) {
+            f = k - 1 + N * (j + i * N);
+          }
+          if (k < N - 1) {
+            b = k + 1 + N * (j + i * N);
+          }
+
+          // assert(l >= 0 && l < N*N*N && "it's l");
+          // assert(r >= 0 && r < N*N*N && "it's r");
+          // assert(u >= 0 && u < N*N*N && "it's u");
+          // assert(d >= 0 && d < N*N*N && "it's d");
+          // assert(f >= 0 && f < N*N*N && "it's f");
+          // assert(b >= 0 && b < N*N*N && "it's b");
+
+          float E1 = local_energy(lattice, N, i, j, k);
+          int nn[6] = {u, d, l, r, f, b};
+          auto mv = nn[dis(gen)];
+          auto [mi, mj, mk] = revert(mv, N);
+          exchange(lattice, N, site, mv);
+          float E2 = local_energy(lattice, N, i, j, k) +
+                     local_energy(lattice, N, mi, mj, mk);
+          // TODO check correctness here
+          float dE = E2 - E1;
+          if (uni(gen) < std::exp(-beta * dE))
+            continue;
+          exchange(lattice, N, mv, site);
+        }
+    }
+}
+
 void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
 
   std::random_device rd;
