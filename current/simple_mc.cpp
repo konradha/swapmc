@@ -234,6 +234,8 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
   int ii, jj, kk;
   ii = jj = kk = 0;
 
+  int cpy[N*N*N]; for(int i=0;i<N*N*N;++i)cpy[i] = 0;
+
   for (ii = 0; ii < 3; ++ii) // distance at which there is
                              // no race between threads
                              // -> kind of a checkerboard flip
@@ -243,6 +245,7 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
       for (int j = jj; j < N - 3 + 1; ++j)
         for (int k = kk; k < N - 3 + 1; ++k) {
           const auto site = k + N * (j + i * N);
+          cpy[site] = omp_get_thread_num() + 1;
           int l, r, u, d, f, b; // left, right, up, down, front, back
           l = r = u = d = f = b = 0;
           if (i == 0) {
@@ -304,6 +307,13 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
           exchange(lattice, N, mv, site);
         }
     }
+
+    // TODO final sweeps at boundaries always
+    // 1 in j dir ?
+    // 2 in k dir ?
+    print_slice(cpy, N, 3);
+    print_slice(cpy, N, 6);
+    print_slice(cpy, N, 9);
 }
 
 void sweep_single(int *__restrict lattice, const int N, const float beta = 1.) {
