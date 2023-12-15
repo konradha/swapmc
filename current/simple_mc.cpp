@@ -25,6 +25,16 @@ void print_slice(int *lattice, int N, int i) {
   }
 }
 
+int sum_slice(int * __restrict lattice, int N, int i)
+{
+  int s = 0;
+#pragma omp parallel for collapse(2) reduce(+:s)
+  for (int j = 0; j < N; ++j) 
+    for (int k = 0; k < N; ++k)
+        s += lattice[k + N * (j + i * N)]; 
+  return s;
+}
+
 std::random_device rd_sample;
 std::mt19937 gen_sample(__rdtsc());
 int sample_vacant(int *grid, int sz) {
@@ -139,91 +149,6 @@ static inline float local_energy(int *__restrict grid, const int &N,
   return current * current;
 }
 
-void sweep_complete(int *__restrict lattice, const int N, const float beta = 1.) {
-
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<> dis(0, 5);
-  std::uniform_real_distribution<> uni(0., 1.);
-
-  int ii, jj, kk;
-  ii = jj = kk = 0;
-
-  for (ii = 0; ii < 3; ++ii) // distance at which there is
-                             // no race between threads
-                             // -> kind of a checkerboard flip
-#pragma omp parallel for collapse(1) firstprivate(gen, dis, uni)
-    for (int i = ii; i < N - 3 + 1; i += 3) {
-      //#pragma unroll(3)
-      for (int j = jj; j < N - 3 + 1; ++j)
-        for (int k = kk; k < N - 3 + 1; ++k) {
-          const auto site  = k + N * (j + i * N);
-          // TODO actually fill out all surrounding ones -- else we're always leaving 
-          // some sites on the table
-          const auto site2 = k + N * (j+1 + (i+2) * N);
-          int l, r, u, d, f, b; // left, right, up, down, front, back
-          l = r = u = d = f = b = 0;
-          if (i == 0) {
-            u = k + N * (j + (N - 1) * N);
-          }
-          if (i == N - 1) {
-            d = k + N * j;
-          }
-          if (j == 0) {
-            l = k + N * ((N - 1) + i * N);
-          }
-          if (j == N - 1) {
-            r = k + N * (i * N);
-          }
-          if (k == 0) {
-            f = N - 1 + N * (j + i * N);
-          }
-          if (k == N - 1) {
-            b = N * (j + i * N);
-          }
-
-          if (i > 0) {
-            u = k + N * (j + (i - 1) * N);
-          }
-          if (i < N - 1) {
-            d = k + N * (j + (i + 1) * N);
-          }
-          if (j > 0) {
-            l = k + N * (j - 1 + i * N);
-          }
-          if (j < N - 1) {
-            r = k + N * (j + 1 + i * N);
-          }
-          if (k > 0) {
-            f = k - 1 + N * (j + i * N);
-          }
-          if (k < N - 1) {
-            b = k + 1 + N * (j + i * N);
-          }
-
-          // assert(l >= 0 && l < N*N*N && "it's l");
-          // assert(r >= 0 && r < N*N*N && "it's r");
-          // assert(u >= 0 && u < N*N*N && "it's u");
-          // assert(d >= 0 && d < N*N*N && "it's d");
-          // assert(f >= 0 && f < N*N*N && "it's f");
-          // assert(b >= 0 && b < N*N*N && "it's b");
-
-          float E1 = local_energy(lattice, N, i, j, k);
-          int nn[6] = {u, d, l, r, f, b};
-          auto mv = nn[dis(gen)];
-          auto [mi, mj, mk] = revert(mv, N);
-          exchange(lattice, N, site, mv);
-          float E2 = local_energy(lattice, N, i, j, k) +
-                     local_energy(lattice, N, mi, mj, mk);
-          // TODO check correctness here
-          float dE = E2 - E1;
-          if (uni(gen) < std::exp(-beta * dE))
-            continue;
-          exchange(lattice, N, mv, site);
-        }
-    }
-}
-
 void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
 
   std::random_device rd;
@@ -235,17 +160,25 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
   ii = jj = kk = 0;
 
   int cpy[N*N*N]; for(int i=0;i<N*N*N;++i)cpy[i] = 0;
-
+  int sum_sites = 0;
   for (ii = 0; ii < 3; ++ii) // distance at which there is
                              // no race between threads
                              // -> kind of a checkerboard flip
-#pragma omp parallel for collapse(1) firstprivate(gen, dis, uni)
+#pragma omp parallel for collapse(1) firstprivate(gen, dis, uni) schedule(static)
     for (int i = ii; i < N - 3 + 1; i += 3) {
-      //#pragma unroll(3)
-      for (int j = jj; j < N - 3 + 1; ++j)
-        for (int k = kk; k < N - 3 + 1; ++k) {
+      int m = (i > 2 ? 2 : 0); 
+      //int m=0;
+      for (int j = jj; j < N - 3 + 1 + m; ++j)
+      {
+             
+        int n = (i > 2? 2 : 0);
+        //int n=0;
+        for (int k = kk; k < N - 3 + 1 + n; ++k) {
+
           const auto site = k + N * (j + i * N);
+          // TODO remove debugging statements 
           cpy[site] = omp_get_thread_num() + 1;
+          if (lattice[site] == 0) continue;
           int l, r, u, d, f, b; // left, right, up, down, front, back
           l = r = u = d = f = b = 0;
           if (i == 0) {
@@ -293,9 +226,12 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
           // assert(f >= 0 && f < N*N*N && "it's f");
           // assert(b >= 0 && b < N*N*N && "it's b");
 
-          float E1 = local_energy(lattice, N, i, j, k);
+          
           int nn[6] = {u, d, l, r, f, b};
           auto mv = nn[dis(gen)];
+          if (lattice[mv] == lattice[site]) continue; // will not change energy 
+
+          float E1 = local_energy(lattice, N, i, j, k);
           auto [mi, mj, mk] = revert(mv, N);
           exchange(lattice, N, site, mv);
           float E2 = local_energy(lattice, N, i, j, k) +
@@ -306,14 +242,23 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
             continue;
           exchange(lattice, N, mv, site);
         }
+      }
     }
 
     // TODO final sweeps at boundaries always
     // 1 in j dir ?
     // 2 in k dir ?
-    print_slice(cpy, N, 3);
-    print_slice(cpy, N, 6);
-    print_slice(cpy, N, 9);
+    // TODO top right of every slice is untouched -- FIX!
+    //std::cout << sum_slice(cpy, N, 3) << "\n";
+    //std::cout << sum_slice(cpy, N, 6) << "\n";
+    //std::cout << sum_slice(cpy, N, 9) << "\n";
+    //print_slice(cpy, N, 3);
+    //std::cout << "\n";
+    //print_slice(cpy, N, 6);
+    //std::cout << "\n";
+    //print_slice(cpy, N, 9); 
+    //std::cout << "\n";
+    // this seems to not be deterministic -- check again
 }
 
 void sweep_single(int *__restrict lattice, const int N, const float beta = 1.) {
@@ -405,7 +350,7 @@ float energy(int *__restrict lattice, const int &N) {
 int main() {
   int N = 30;
   int r = 12000;
-  int b = 5000;
+  int b = 8000;
 
   float beta = 3.;
 
@@ -417,42 +362,51 @@ int main() {
   build_lattice(lattice, N, r, b);
 
   std::cout << "scale in 1e6 epochs\n";
-  int nsteps = 1000;
-  float singles = 0.;
-  for (int i = 0; i < nsteps; ++i) {
-    auto t0 = __rdtsc();
-    sweep_single(lattice, N, beta);
-    auto tf = __rdtsc();
-    singles += tf - t0;
-  }
-  std::cout << "single core implementation: " << singles / nsteps / 1e6 << "\n";
+  int nsteps = 10000;
+  //float singles = 0.;
+  //for (int i = 0; i < nsteps; ++i) {
+  //  auto t0 = __rdtsc();
+  //  sweep_single(lattice, N, beta);
+  //  auto tf = __rdtsc();
+  //  singles += tf - t0;
+  //}
+  //std::cout << "single core implementation: " << singles / nsteps / 1e6 << "\n";
 
-  for (int i = 1; i < 13; ++i) {
+  //for (int i = 1; i < 16; ++i) {
+  //  float curr = 0.;
+  //  omp_set_num_threads(i);
+  //  for (int i = 0; i < nsteps; ++i) {
+  //    auto t0 = __rdtsc();
+  //    sweep(lattice, N, beta);
+  //    auto tf = __rdtsc();
+  //    curr += tf - t0;
+  //  }
+  //  std::cout << "OMP with " << i << " cores: " << curr / nsteps / 1e6 << "\n";
+  //}
     float curr = 0.;
-    omp_set_num_threads(i);
+    omp_set_num_threads(10); // 10 performs the best
     for (int i = 0; i < nsteps; ++i) {
       auto t0 = __rdtsc();
       sweep(lattice, N, beta);
       auto tf = __rdtsc();
       curr += tf - t0;
     }
-    std::cout << "OMP with " << i << " cores: " << curr / nsteps / 1e6 << "\n";
-  }
+    std::cout << "OMP with " << 10 << " cores takes ~" << curr / nsteps / 1e6 << "*1e6 cycles / sweep / proc\n";
 
-  std::cout << "FINAL ROUND\n";
-  omp_set_num_threads(10);
-  float curr = 0.;
-  nsteps = 1000000;
-  for (int i = 0; i < nsteps; ++i) {
-    auto t0 = __rdtsc();
-    sweep(lattice, N, beta);
-    auto tf = __rdtsc();
-    curr += tf - t0;
-    if (i % 10000 == 0)
-      std::cout << energy(lattice, N) / (N * N * N) << "\n";
-  }
-  std::cout << nsteps << "epochs\n";
-  std::cout << "OMP with " << 10 << " cores: " << curr / nsteps / 1e6 << "\n";
+  //std::cout << "FINAL ROUND\n";
+  //omp_set_num_threads(10);
+  //float curr = 0.;
+  //nsteps = 1000000;
+  //for (int i = 0; i < nsteps; ++i) {
+  //  auto t0 = __rdtsc();
+  //  sweep(lattice, N, beta);
+  //  auto tf = __rdtsc();
+  //  curr += tf - t0;
+  //  if (i % 10000 == 0)
+  //    std::cout << energy(lattice, N) / (N * N * N) << "\n";
+  //}
+  //std::cout << nsteps << "epochs\n";
+  //std::cout << "OMP with " << 10 << " cores: " << curr / nsteps / 1e6 << "\n";
 
   free(lattice);
 }
