@@ -1,3 +1,5 @@
+// mpicxx -pg -pedantic -ffast-math -march=native -O3 -Wall -fopenmp -Wunknown-pragmas  -lm -lstdc++ -std=c++17 mpi_mc.cpp -o to_mpi
+
 // clang++-17 -pedantic -ffast-math -march=native -O3 -Wall -fopenmp
 // -Wunknown-pragmas -fsanitize=address -lm -lstdc++ -std=c++20 simple_mc.cpp -o
 // to_simple; time ./to_simple
@@ -6,6 +8,8 @@
 // export OMP_PLACES=threads; clang++-17 -pg -pedantic -ffast-math -march=native
 // -O3 -Wall -fopenmp -Wunknown-pragmas -fsanitize=address -lm -lstdc++
 // -std=c++20 simple_mc.cpp -o to_simple; time ./to_simple
+
+#include <mpi.h>
 
 #include <algorithm>
 #include <cassert>
@@ -262,7 +266,7 @@ int main() {
   float curr = 0.;
   omp_set_num_threads(10); // 10 performs the best so far
   for (int i = 0; i < nsteps; ++i) {
-    auto t0 = __rdtsc();
+    auto t0 = __rdtsc(); // rather use MPI_Wtime()
     sweep(lattice, N, beta);
     auto tf = __rdtsc();
     curr += tf - t0;

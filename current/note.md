@@ -95,3 +95,21 @@ end while
 - burn-in as parameter
 - write tests
 - introduce sampling with some cutoff around a point
+
+## TODO 5
+- write tests to make a convincing case for the parallelization (ie. that it's not faulty)
+- check some basic stats (leftmost part of Fig 2a)
+- find out how to massively launch jobs on current Euler
+- devise strategy to get the measurements we want here...
+
+
+
+## statistical tricks to make use of
+- sublattice flipping (w/ heat bath method)
+- 96 swap mc paper: odd / even numbering of replicas --
+- replica exchange
+- distributed averaging / majority
+- parallel tempering
+- particle types constant ?
+- cluster updates (swendsen wang?) (how applicable here?)
+- more from jap paper
