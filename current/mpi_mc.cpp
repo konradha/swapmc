@@ -228,7 +228,7 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
                      local_energy(lattice, N, mi, mj, mk);
           
           float dE = E2 - E1;
-          if (uni(gen) >= std::exp(-beta * dE))
+          if (uni(gen) <= std::exp(-beta * dE))
             continue; // success, accept new state
           exchange(lattice, N, mv, site);
         }
@@ -325,12 +325,15 @@ int main(int argc, char **argv) {
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &rk);
   MPI_Comm_size(MPI_COMM_WORLD, &sz);
+  auto arg_beta = argv[1];
+  auto beta = atof(arg_beta);
+
 
   int N = 30;
   int r = 12000;
   int b = 8000;
-
-  float beta = .5;
+  
+  //float beta = .1;
   int *lattice;
   if (rk == 0) lattice = distribute_lattice(N, r, b); 
   else lattice = receive_start(N, r, b);
@@ -346,7 +349,8 @@ int main(int argc, char **argv) {
   {
     //MPI_Request req; TODO check if there's some smart interleaving possible
     auto e = sweep_loop(lattice, N, beta, nsteps, t0, tf);
-    std::cout << "rank " << rk << ", energy at " << i << ": " << e << "\n";
+    //std::cout << "rank " << rk << ", energy at " << i << ": " << e << "\n";
+    std::cout << e << "\n";
     determine_and_distribute(e, energies, rk, sz, lattice, N, t0_comm, tf_comm); 
   }
   std::cout << rk << ": " << tf_comm - t0_comm  << " secs spent communicating / waiting\n";
