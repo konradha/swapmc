@@ -1,9 +1,7 @@
+// mpicxx -ffast-math -march=native -O3 -Wall -Wunknown-pragmas -fopenmp  -lm -lstdc++ -std=c++17  mpi_mc.cpp -o to_mpi
+
 // mpicxx -pg -pedantic -ffast-math -march=native -O3 -Wall -fopenmp -Wunknown-pragmas  -lm -lstdc++ -std=c++17 mpi_mc.cpp -o to_mpi
 
-// clang++-17 -pedantic -ffast-math -march=native -O3 -Wall -fopenmp
-// -Wunknown-pragmas -fsanitize=address -lm -lstdc++ -std=c++20 simple_mc.cpp -o
-// to_simple; time ./to_simple
-//
 // to benchmark
 // export OMP_PLACES=threads; clang++-17 -pg -pedantic -ffast-math -march=native
 // -O3 -Wall -fopenmp -Wunknown-pragmas -fsanitize=address -lm -lstdc++
@@ -30,7 +28,7 @@ void print_slice(int *lattice, int N, int i) {
 }
 
 std::random_device rd_sample;
-std::mt19937 gen_sample(__rdtsc());
+std::mt19937 gen_sample(33); // TODO adapt to MPI
 int sample_vacant(int *grid, int sz) {
   std::uniform_int_distribution<> dis(0, sz - 1);
   // our algorithm assumes that the number of vacant spots is always larger than
@@ -150,6 +148,8 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
   std::uniform_int_distribution<> dis(0, 5);
   std::uniform_real_distribution<> uni(0., 1.);
 
+  
+
   int ii, jj, kk;
   ii = jj = kk = 0;
   for (ii = 0; ii < 3; ++ii) // distance at which there is
@@ -237,6 +237,10 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
 }
 
 float energy(int *__restrict lattice, const int &N) {
+  int rank, size;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+
   float e = 0.;
 #pragma omp parallel for collapse(3) reduction(+ : e)
   for (int i = 0; i < N; ++i)
@@ -246,33 +250,105 @@ float energy(int *__restrict lattice, const int &N) {
   return e;
 }
 
-int main() {
+
+int * distribute_lattice(const int &N, const int &r, const int &b)
+{
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    if (rank != 0) return nullptr;
+
+    int *lattice = nullptr;
+    const unsigned int align = 64;
+    auto padded_N = (N * N * N + (align - 1)) & ~(align - 1);
+    if (posix_memalign((void **)&lattice, align, padded_N * sizeof(int)) != 0)
+        return nullptr;
+    build_lattice(lattice, N, r, b);
+
+    int res = MPI_Bcast(lattice, N*N*N, MPI_INT, 0, MPI_COMM_WORLD);
+    return lattice;
+}
+
+int * receive_start(const int &N, const int &r, const int &b)
+{
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    if (rank == 0) return nullptr; 
+    int *lattice = nullptr;
+    const unsigned int align = 64;
+    auto padded_N = (N * N * N + (align - 1)) & ~(align - 1);
+    if (posix_memalign((void **)&lattice, align, padded_N * sizeof(int)) != 0)
+        return nullptr;
+    int res = MPI_Bcast(lattice, N*N*N, MPI_INT, 0, MPI_COMM_WORLD); 
+    return lattice;
+}
+
+
+float sweep_loop(int *__restrict lattice, const int &N, const float &beta, const int &nsteps, double &t0, double &tf){ 
+  t0 += MPI_Wtime(); 
+  for (int i = 0; i < nsteps; ++i) 
+    sweep(lattice, N, beta); // parallel loop per rank
+  auto e = energy(lattice, N); // parallel loop per rank
+  tf += MPI_Wtime();
+  return e;
+}
+
+int determine_and_distribute(const float &e, float *energies, const int &rk, const int &sz, int *__restrict lattice, const int &N)
+{
+    MPI_Gather(&e, 1, MPI_INT, energies, 1, MPI_INT, 0, MPI_COMM_WORLD); 
+    int broadcaster = sz + 10;
+    if (rk == 0) 
+    {
+        float m = 1000000000.;
+        for (int r = 0; r < sz; ++r)
+            if (energies[r] < m)
+            {
+                m = energies[r];   
+                broadcaster = r;
+            }
+       MPI_Bcast(&broadcaster, 1, MPI_INT, 0, MPI_COMM_WORLD); 
+    }
+    else
+    {
+       MPI_Bcast(&broadcaster, 1, MPI_INT, 0, MPI_COMM_WORLD); 
+    }
+    MPI_Bcast(lattice, N*N*N, MPI_INT, broadcaster, MPI_COMM_WORLD);
+    return 0;
+}
+
+int main(int argc, char **argv) {
+  int rk, sz;
+  MPI_Init(&argc, &argv);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rk);
+  MPI_Comm_size(MPI_COMM_WORLD, &sz);
+
   int N = 30;
   int r = 12000;
   int b = 8000;
 
   float beta = 3.;
+  int *lattice;
+  if (rk == 0) lattice = distribute_lattice(N, r, b); 
+  else lattice = receive_start(N, r, b);
+  MPI_Barrier(MPI_COMM_WORLD);
 
-  int *lattice = nullptr;
-  const unsigned int align = 64;
-  auto padded_N = (N * N * N + (align - 1)) & ~(align - 1);
-  if (posix_memalign((void **)&lattice, align, padded_N * sizeof(int)) != 0)
-    return 1;
-  build_lattice(lattice, N, r, b);
-
-  std::cout << "scale in 1e6 epochs\n";
-  int nsteps = 10000;
-
-  float curr = 0.;
-  omp_set_num_threads(10); // 10 performs the best so far
-  for (int i = 0; i < nsteps; ++i) {
-    auto t0 = __rdtsc(); // rather use MPI_Wtime()
-    sweep(lattice, N, beta);
-    auto tf = __rdtsc();
-    curr += tf - t0;
+  //omp_set_num_threads(6);
+  int nsteps = 1000;
+  int ntries = 5;
+  double t0, tf; t0 = tf = 0.; 
+  float * energies = (rk == 0? ( (float *) calloc(sz, sizeof(float))) : nullptr);
+  for (int i=0;i<ntries;++i)
+  {
+    //MPI_Request req; TODO check if there's some smart interleaving possible
+    auto e = sweep_loop(lattice, N, beta, nsteps, t0, tf);
+    determine_and_distribute(e, energies, rk, sz, lattice, N); 
   }
-  std::cout << "OMP with " << 10 << " cores takes ~" << curr / nsteps / 1e6 << "*1e6 cycles / sweep / proc\n";
+  std::cout << rk << ": took " << tf - t0  << " secs for " << ntries <<  "*" << nsteps << " sweeps\n";
 
 
   free(lattice);
+  MPI_Finalize();
+  return 0;
 }
