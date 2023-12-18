@@ -295,8 +295,9 @@ float sweep_loop(int *__restrict lattice, const int &N, const float &beta, const
   return e;
 }
 
-int determine_and_distribute(const float &e, float *energies, const int &rk, const int &sz, int *__restrict lattice, const int &N)
+int determine_and_distribute(const float &e, float *energies, const int &rk, const int &sz, int *__restrict lattice, const int &N, double &t0, double &tf)
 {
+    t0 += MPI_Wtime();
     MPI_Gather(&e, 1, MPI_INT, energies, 1, MPI_INT, 0, MPI_COMM_WORLD); 
     int broadcaster = sz + 10;
     if (rk == 0) 
@@ -315,6 +316,7 @@ int determine_and_distribute(const float &e, float *energies, const int &rk, con
        MPI_Bcast(&broadcaster, 1, MPI_INT, 0, MPI_COMM_WORLD); 
     }
     MPI_Bcast(lattice, N*N*N, MPI_INT, broadcaster, MPI_COMM_WORLD);
+    tf += MPI_Wtime();
     return 0;
 }
 
@@ -328,24 +330,29 @@ int main(int argc, char **argv) {
   int r = 12000;
   int b = 8000;
 
-  float beta = 3.;
+  float beta = .5;
   int *lattice;
   if (rk == 0) lattice = distribute_lattice(N, r, b); 
   else lattice = receive_start(N, r, b);
   MPI_Barrier(MPI_COMM_WORLD);
 
-  //omp_set_num_threads(6);
+  //omp_set_num_threads(4);
   int nsteps = 1000;
-  int ntries = 5;
+  int ntries = 100;
   double t0, tf; t0 = tf = 0.; 
+  double t0_comm, tf_comm; t0_comm = t0_comm = 0.;
   float * energies = (rk == 0? ( (float *) calloc(sz, sizeof(float))) : nullptr);
   for (int i=0;i<ntries;++i)
   {
     //MPI_Request req; TODO check if there's some smart interleaving possible
     auto e = sweep_loop(lattice, N, beta, nsteps, t0, tf);
-    determine_and_distribute(e, energies, rk, sz, lattice, N); 
+    std::cout << "rank " << rk << ", energy at " << i << ": " << e << "\n";
+    determine_and_distribute(e, energies, rk, sz, lattice, N, t0_comm, tf_comm); 
   }
+  std::cout << rk << ": " << tf_comm - t0_comm  << " secs spent communicating / waiting\n";
   std::cout << rk << ": took " << tf - t0  << " secs for " << ntries <<  "*" << nsteps << " sweeps\n";
+  std::cout << rk << ": took " << (tf - t0) / ntries  << " secs for " << nsteps << " sweeps (in average)\n";
+  
 
 
   free(lattice);
