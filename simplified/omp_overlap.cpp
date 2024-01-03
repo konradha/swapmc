@@ -18,6 +18,8 @@
 #include <immintrin.h>
 #include <unordered_map>
 
+#include <mpi.h>
+
 void dump_slice(const int *__restrict lattice, const int N, const int i) {
   for (int j = 0; j < N; ++j) {
     for (int k = 0; k < N; ++k)
@@ -43,6 +45,7 @@ int logand(const int *__restrict lattice1, const int *__restrict lattice2,
       }
   return log;
 }
+
 
 std::random_device rd_sample;
 std::mt19937 gen_sample(__rdtsc());
@@ -181,44 +184,7 @@ static inline float local_energy(int *__restrict grid, const int &N,
 
   float connection = grid[site] == 1 ? 3. : 5.;
   float current = 0.;
-  //int l, r, u, d, f, b; // left, right, up, down, front, back
-  //l = r = u = d = f = b = 0;
-  //if (i == 0) {
-  //  u = k + N * (j + (N - 1) * N);
-  //}
-  //if (i == N - 1) {
-  //  d = k + N * j;
-  //}
-  //if (j == 0) {
-  //  l = k + N * ((N - 1) + i * N);
-  //}
-  //if (j == N - 1) {
-  //  r = k + N * (i * N);
-  //}
-  //if (k == 0) {
-  //  f = N - 1 + N * (j + i * N);
-  //}
-  //if (k == N - 1) {
-  //  b = N * (j + i * N);
-  //}
-  //if (i > 0) {
-  //  u = k + N * (j + (i - 1) * N);
-  //}
-  //if (i < N - 1) {
-  //  d = k + N * (j + (i + 1) * N);
-  //}
-  //if (j > 0) {
-  //  l = k + N * (j - 1 + i * N);
-  //}
-  //if (j < N - 1) {
-  //  r = k + N * (j + 1 + i * N);
-  //}
-  //if (k > 0) {
-  //  f = k - 1 + N * (j + i * N);
-  //}
-  //if (k < N - 1) {
-  //  b = k + 1 + N * (j + i * N);
-  //}
+  
   auto [l, r, u, d, f, b] = nn[site];
 
   // TODO: check if this does the right thing -- for now it's faster
@@ -229,20 +195,12 @@ static inline float local_energy(int *__restrict grid, const int &N,
   v_lo = _mm_add_ss(v_lo, _mm_shuffle_ps(v_lo, v_lo, 1));
   current = _mm_cvtss_f32(v_lo);
 
-//#pragma omp simd reduction(+ : current)
-//  for (const auto &nn : {u, d, l, r, f, b}) {
-//    if (!grid[nn]) // no contributions from empty sites
-//      continue;
-//    current += 1.;
-//  }
   current = connection - current;
   return current * current;
 }
 
 void sweep(int *__restrict lattice, const int N, const float beta = 1.) { 
-//#pragma omp parallel for collapse(2) schedule(static)
-//#pragma omp parallel for collapse(2) schedule(dynamic, 4) shared(lattice) firstprivate(N)
-#pragma omp parallel for collapse(2) schedule(auto) shared(lattice) firstprivate(N) //proc_bind(close) (not really needed as it's set by hand)
+#pragma omp parallel for collapse(2) schedule(auto) shared(lattice) firstprivate(N)
   for (int ii = 0; ii < N; ii += 3) {
     for (int jj = 0; jj < N; jj += 3) {
       std::random_device rd;
@@ -259,49 +217,7 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
               // necessary for the local move dynamics
               if (lattice[site] == 0)
                 continue;
-
-              //int l, r, u, d, f, b; // left, right, up, down, front, back
-              //l = r = u = d = f = b = 0;
-              //if (i == 0) {
-              //  u = k + N * (j + (N - 1) * N);
-              //}
-              //if (i == N - 1) {
-              //  d = k + N * j;
-              //}
-              //if (j == 0) {
-              //  l = k + N * ((N - 1) + i * N);
-              //}
-              //if (j == N - 1) {
-              //  r = k + N * (i * N);
-              //}
-              //if (k == 0) {
-              //  f = N - 1 + N * (j + i * N);
-              //}
-              //if (k == N - 1) {
-              //  b = N * (j + i * N);
-              //}
-
-              //if (i > 0) {
-              //  u = k + N * (j + (i - 1) * N);
-              //}
-              //if (i < N - 1) {
-              //  d = k + N * (j + (i + 1) * N);
-              //}
-              //if (j > 0) {
-              //  l = k + N * (j - 1 + i * N);
-              //}
-              //if (j < N - 1) {
-              //  r = k + N * (j + 1 + i * N);
-              //}
-              //if (k > 0) {
-              //  f = k - 1 + N * (j + i * N);
-              //}
-              //if (k < N - 1) {
-              //  b = k + 1 + N * (j + i * N);
-              //}
-              //int nn[6] = {u, d, l, r, f, b};
               auto nn = ::nn[site];
-
               auto mv = nn[dis(gen)]; // get one of the site's neighbors
 
               if (lattice[mv] == lattice[site])
@@ -312,8 +228,7 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
               // auto [mi, mj, mk] = revert(mv, N);
               exchange(lattice, N, site, mv);
               float E2 = local_energy(
-                  lattice, N, i, j, k); // +
-                                        // local_energy(lattice, N, mi, mj, mk);
+                  lattice, N, i, j, k);                                        
 
               float dE = std::abs(E2 - E1);
               if (uni(gen) <= std::exp(-beta * dE)) {
@@ -338,11 +253,20 @@ float energy(int *__restrict lattice, const int &N) {
   return e;
 }
 
+
+
 int main(int argc, char **argv) {
   if (argc != 3) {
     std::cout << "run as ./bin beta num_threads\n";
     return 1;
   }
+
+  int rk, sz;
+  MPI_Init(&argc, &argv);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rk);
+  MPI_Comm_size(MPI_COMM_WORLD, &sz);
+
+  if (sz > 2) return 1;
 
   auto arg_beta = argv[1];
   auto beta = atof(arg_beta);
@@ -369,14 +293,22 @@ int main(int argc, char **argv) {
 
   int *lattice = nullptr;
   int *lattice_back = nullptr;
+  int *cpy_lattice = nullptr;
   const unsigned int align = 64;
   auto padded_N = (N * N * N + (align - 1)) & ~(align - 1);
 
   if (posix_memalign((void **)&lattice, align, padded_N * sizeof(int)) != 0)
     return 1;
-  build_lattice(lattice, N, r, b);
+  if (rk == 0)
+    build_lattice(lattice, N, r, b);
+
+  MPI_Bcast(lattice, N * N * N, MPI_INT, 0, MPI_COMM_WORLD);  
 
   if (posix_memalign((void **)&lattice_back, align, padded_N * sizeof(int)) !=
+      0)
+    return 1;
+
+  if (posix_memalign((void **)&cpy_lattice, align, padded_N * sizeof(int)) !=
       0)
     return 1;
 
@@ -385,8 +317,15 @@ int main(int argc, char **argv) {
       for (int k = 0; k < N; ++k)
         lattice_back[k + N * (j + i * N)] = lattice[k + N * (j + i * N)];
 
-  int nsweeps = (1 << 20) + 1;
-  std::cout << 0 << "," << logand(lattice_back, lattice, N) << "\n";
+  int nsweeps = (1 << 17) + 1;
+  if (rk == 0)
+  {
+    std::cout << 0 << "," << logand(lattice_back, lattice, N) << "," << r+b << "\n";
+  }
+
+
+
+
 
   int curr = 1;
   std::uniform_real_distribution<> uni(0., 1.);
@@ -414,8 +353,13 @@ int main(int argc, char **argv) {
     sweep(lattice, N, beta);
 
     if (i == curr) {
+      if (rk == 1)
+          MPI_Send(lattice, N * N * N, MPI_INT, 0, 0, MPI_COMM_WORLD);
+      else
+          MPI_Recv(cpy_lattice, N * N * N, MPI_INT, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       //logand(lattice_back, lattice, N);
-      std::cout << i << "," << logand(lattice_back, lattice, N) << "\n";
+      if (rk == 0)
+        std::cout << i << "," << logand(lattice_back, lattice, N) << "," << logand(lattice, cpy_lattice, N) << "\n";
       curr *= 2;
     }
   }
@@ -423,6 +367,8 @@ int main(int argc, char **argv) {
   //std::cout << nsw << "," << (float)(t2 - t1) / (1e6) << "\n";
   free(lattice);
   free(lattice_back);
-
+  if (rk == 0)
+    free(cpy_lattice);
+  MPI_Finalize();
   return 0;
 }
