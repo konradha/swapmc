@@ -1,6 +1,11 @@
-// clang++-17 -fsanitize=address -pedantic -fno-omit-frame-pointer -ggdb -ffast-math -march=native -O3 -Wall -Wunknown-pragmas -fopenmp  -lm -lstdc++ -std=c++17 no_mpi.cpp -o to_none
+// clang++-17 -fsanitize=address -pedantic -fno-omit-frame-pointer -ggdb
+// -ffast-math -march=native -O3 -Wall -Wunknown-pragmas -fopenmp  -lm -lstdc++
+// -std=c++17 no_mpi.cpp -o to_none
+//
+// clang++-17 -ftree-vectorize -pedantic -ffast-math -march=native -O3 -Wall -Wunknown-pragmas -fopenmp  -lm -lstdc++ -std=c++17 no_mpi.cpp -o to_none
 
-// benchmark'd with for i in $(seq 1 8); do GOMP_CPU_AFFINITY="0,2,4,6,8,10,12,14" ./to_none 1. $i; done
+// benchmark'd with for i in $(seq 1 8); do
+// GOMP_CPU_AFFINITY="0,2,4,6,8,10,12,14" ./to_none 1. $i; done
 #include <algorithm>
 #include <cassert>
 #include <iostream>
@@ -10,6 +15,8 @@
 #include <stdexcept>
 #include <stdlib.h>
 
+#include <immintrin.h>
+#include <unordered_map>
 
 void dump_slice(const int *__restrict lattice, const int N, const int i) {
   for (int j = 0; j < N; ++j) {
@@ -107,14 +114,8 @@ static inline std::tuple<int, int, int> revert(int s, int N = 30) {
   return {i, j, k};
 }
 
-static inline float local_energy(int *__restrict grid, const int &N,
-                                 const int &i, const int &j, const int &k) {
-  auto site = k + N * (j + N * i);
-  if (grid[site] == 0)
-    return 0.;
-
-  float connection = grid[site] == 1 ? 3. : 5.;
-  float current = 0.;
+std::array<int, 6> get_neighbors(const int &i, const int &j, const int &k, const int &N)
+{
   int l, r, u, d, f, b; // left, right, up, down, front, back
   l = r = u = d = f = b = 0;
   if (i == 0) {
@@ -153,20 +154,95 @@ static inline float local_energy(int *__restrict grid, const int &N,
   if (k < N - 1) {
     b = k + 1 + N * (j + i * N);
   }
+  return {u, d, l, r, f, b};
+}
 
-#pragma omp simd
-  for (const auto &nn : {u, d, l, r, f, b}) {
-    if (!grid[nn]) // no contributions from empty sites
-      continue;
-    current += 1.;
-  }
+std::unordered_map<int, std::array<int, 6>> get_nn_list(const int &N)
+{
+  std::unordered_map<int, std::array<int, 6>> neighbor_map;
+  for(int i=0;i<N;++i)
+      for(int j=0;j<N;++j)
+          for(int k=0;k<N;++k)
+          { 
+            const auto site = k + N * (j + i * N);
+            neighbor_map[site] = get_neighbors(i,j,k,N);
+          }
+  return neighbor_map;
+}
+
+std::unordered_map<int, std::array<int, 6> > nn;
+
+
+static inline float local_energy(int *__restrict grid, const int &N,
+                                 const int &i, const int &j, const int &k) {
+  auto site = k + N * (j + N * i);
+  if (grid[site] == 0)
+    return 0.;
+
+  float connection = grid[site] == 1 ? 3. : 5.;
+  float current = 0.;
+  //int l, r, u, d, f, b; // left, right, up, down, front, back
+  //l = r = u = d = f = b = 0;
+  //if (i == 0) {
+  //  u = k + N * (j + (N - 1) * N);
+  //}
+  //if (i == N - 1) {
+  //  d = k + N * j;
+  //}
+  //if (j == 0) {
+  //  l = k + N * ((N - 1) + i * N);
+  //}
+  //if (j == N - 1) {
+  //  r = k + N * (i * N);
+  //}
+  //if (k == 0) {
+  //  f = N - 1 + N * (j + i * N);
+  //}
+  //if (k == N - 1) {
+  //  b = N * (j + i * N);
+  //}
+  //if (i > 0) {
+  //  u = k + N * (j + (i - 1) * N);
+  //}
+  //if (i < N - 1) {
+  //  d = k + N * (j + (i + 1) * N);
+  //}
+  //if (j > 0) {
+  //  l = k + N * (j - 1 + i * N);
+  //}
+  //if (j < N - 1) {
+  //  r = k + N * (j + 1 + i * N);
+  //}
+  //if (k > 0) {
+  //  f = k - 1 + N * (j + i * N);
+  //}
+  //if (k < N - 1) {
+  //  b = k + 1 + N * (j + i * N);
+  //}
+  auto [l, r, u, d, f, b] = nn[site];
+
+  // TODO: check if this does the right thing -- for now it's faster
+  __m256 v = _mm256_set_ps(grid[u] & 1, grid[d] & 1, grid[l] & 1, grid[r] & 1, grid[f] & 1, grid[b] & 1, 0., 0.);
+  __m128 v_hi = _mm256_extractf128_ps(v, 1);
+  __m128 v_lo = _mm256_extractf128_ps(v, 0);
+  v_lo = _mm_add_ps(v_lo, v_hi); 
+  v_lo = _mm_add_ss(v_lo, _mm_shuffle_ps(v_lo, v_lo, 1));
+  current = _mm_cvtss_f32(v_lo);
+
+//#pragma omp simd reduction(+ : current)
+//  for (const auto &nn : {u, d, l, r, f, b}) {
+//    if (!grid[nn]) // no contributions from empty sites
+//      continue;
+//    current += 1.;
+//  }
   current = connection - current;
   return current * current;
 }
 
-
-void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
-#pragma omp parallel for collapse(2) schedule(static)
+void sweep(int *__restrict lattice, const int N, const float beta = 1.) { 
+//#pragma omp parallel for collapse(2) schedule(static)
+//#pragma omp parallel for collapse(2) schedule(dynamic, 4) shared(lattice) firstprivate(N)
+#pragma omp parallel for collapse(2) schedule(auto) shared(lattice) firstprivate(N) //proc_bind(close) (not really needed as it's set by hand)
   for (int ii = 0; ii < N; ii += 3) {
     for (int jj = 0; jj < N; jj += 3) {
       std::random_device rd;
@@ -184,46 +260,48 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
               if (lattice[site] == 0)
                 continue;
 
-              int l, r, u, d, f, b; // left, right, up, down, front, back
-              l = r = u = d = f = b = 0;
-              if (i == 0) {
-                u = k + N * (j + (N - 1) * N);
-              }
-              if (i == N - 1) {
-                d = k + N * j;
-              }
-              if (j == 0) {
-                l = k + N * ((N - 1) + i * N);
-              }
-              if (j == N - 1) {
-                r = k + N * (i * N);
-              }
-              if (k == 0) {
-                f = N - 1 + N * (j + i * N);
-              }
-              if (k == N - 1) {
-                b = N * (j + i * N);
-              }
+              //int l, r, u, d, f, b; // left, right, up, down, front, back
+              //l = r = u = d = f = b = 0;
+              //if (i == 0) {
+              //  u = k + N * (j + (N - 1) * N);
+              //}
+              //if (i == N - 1) {
+              //  d = k + N * j;
+              //}
+              //if (j == 0) {
+              //  l = k + N * ((N - 1) + i * N);
+              //}
+              //if (j == N - 1) {
+              //  r = k + N * (i * N);
+              //}
+              //if (k == 0) {
+              //  f = N - 1 + N * (j + i * N);
+              //}
+              //if (k == N - 1) {
+              //  b = N * (j + i * N);
+              //}
 
-              if (i > 0) {
-                u = k + N * (j + (i - 1) * N);
-              }
-              if (i < N - 1) {
-                d = k + N * (j + (i + 1) * N);
-              }
-              if (j > 0) {
-                l = k + N * (j - 1 + i * N);
-              }
-              if (j < N - 1) {
-                r = k + N * (j + 1 + i * N);
-              }
-              if (k > 0) {
-                f = k - 1 + N * (j + i * N);
-              }
-              if (k < N - 1) {
-                b = k + 1 + N * (j + i * N);
-              }
-              int nn[6] = {u, d, l, r, f, b};
+              //if (i > 0) {
+              //  u = k + N * (j + (i - 1) * N);
+              //}
+              //if (i < N - 1) {
+              //  d = k + N * (j + (i + 1) * N);
+              //}
+              //if (j > 0) {
+              //  l = k + N * (j - 1 + i * N);
+              //}
+              //if (j < N - 1) {
+              //  r = k + N * (j + 1 + i * N);
+              //}
+              //if (k > 0) {
+              //  f = k - 1 + N * (j + i * N);
+              //}
+              //if (k < N - 1) {
+              //  b = k + 1 + N * (j + i * N);
+              //}
+              //int nn[6] = {u, d, l, r, f, b};
+              auto nn = ::nn[site];
+
               auto mv = nn[dis(gen)]; // get one of the site's neighbors
 
               if (lattice[mv] == lattice[site])
@@ -261,12 +339,10 @@ float energy(int *__restrict lattice, const int &N) {
 }
 
 int main(int argc, char **argv) {
-  if (argc != 3)
-  {
+  if (argc != 3) {
     std::cout << "run as ./bin beta num_threads\n";
     return 1;
   }
-
 
   auto arg_beta = argv[1];
   auto beta = atof(arg_beta);
@@ -274,22 +350,22 @@ int main(int argc, char **argv) {
   auto arg_nsw = argv[2];
   auto nsw = atoi(arg_nsw);
 
-
   omp_set_num_threads(nsw);
 
-  // int N = 30;
-  // int r = 12000;
-  // int b = 8000;
+  //int N = 30;
+  //int r = 12000;
+  //int b = 8000;
   //
   // ~ values available in PLR
-  // int N = 20;
-  // int r = 3556;
-  // int b = 2370;
+  int N = 20;
+  int r = 3556;
+  int b = 2370;
 
-  int N = 15;
-  int r = 1518;
-  int b = 1012;
+  //int N = 15;
+  //int r = 1518;
+  //int b = 1012;
 
+  nn = get_nn_list(N);
 
   int *lattice = nullptr;
   int *lattice_back = nullptr;
@@ -309,42 +385,42 @@ int main(int argc, char **argv) {
       for (int k = 0; k < N; ++k)
         lattice_back[k + N * (j + i * N)] = lattice[k + N * (j + i * N)];
 
-  int nsweeps = (1 << 15) + 1;
-
+  int nsweeps = (1 << 20) + 1;
+  std::cout << 0 << "," << logand(lattice_back, lattice, N) << "\n";
 
   int curr = 1;
   std::uniform_real_distribution<> uni(0., 1.);
-  auto t1 = __rdtsc();
+  //auto t1 = __rdtsc();
   for (int i = 1; i <= nsweeps; ++i) {
 
     // if (uni(rd_sample) <= .33)
-    {
-      auto red = sample(lattice, N * N * N, r, 1);
-      auto blue = sample(lattice, N * N * N, b, 2);
-      auto [i, j, k] = revert(red, N);
-      auto [x, y, z] = revert(blue, N);
+    //{
+    //  auto red = sample(lattice, N * N * N, r, 1);
+    //  auto blue = sample(lattice, N * N * N, b, 2);
+    //  auto [i, j, k] = revert(red, N);
+    //  auto [x, y, z] = revert(blue, N);
 
-      float E1 =
-          local_energy(lattice, N, i, j, k) + local_energy(lattice, N, x, y, z);
-      exchange(lattice, N, red, blue);
-      float E2 =
-          local_energy(lattice, N, i, j, k) + local_energy(lattice, N, x, y, z);
-      auto dE = std::abs(E1 - E2);
-      if (uni(rd_sample) >= std::exp(-beta * dE)) {
-        exchange(lattice, N, red, blue);
-      }
-    }
+    //  float E1 =
+    //      local_energy(lattice, N, i, j, k) + local_energy(lattice, N, x, y, z);
+    //  exchange(lattice, N, red, blue);
+    //  float E2 =
+    //      local_energy(lattice, N, i, j, k) + local_energy(lattice, N, x, y, z);
+    //  auto dE = std::abs(E1 - E2);
+    //  if (uni(rd_sample) >= std::exp(-beta * dE)) {
+    //    exchange(lattice, N, red, blue);
+    //  }
+    //}
 
     sweep(lattice, N, beta);
 
     if (i == curr) {
-      logand(lattice_back, lattice, N);
-      //std::cout << i << "," << logand(lattice_back, lattice, N) << "\n";
+      //logand(lattice_back, lattice, N);
+      std::cout << i << "," << logand(lattice_back, lattice, N) << "\n";
       curr *= 2;
     }
   }
-  auto t2 = __rdtsc();
-  std::cout << nsw << ","<< (float)(t2 - t1)/(1e6) << "\n";
+  //auto t2 = __rdtsc();
+  //std::cout << nsw << "," << (float)(t2 - t1) / (1e6) << "\n";
   free(lattice);
   free(lattice_back);
 
