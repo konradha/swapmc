@@ -13,7 +13,7 @@ bs = [    ".5",
     ]
 
 
-fnames = [f"smallcheck_withswap_{b}.txt" for b in bs]
+fnames = [f"smallcheck_everyswap_{b}.txt" for b in bs]
 fnames_none = [f"smallcheck_noswap_{b}.txt" for b in bs]
 
 
@@ -52,7 +52,7 @@ for b, f in enumerate(fnames):
 
     #plt.plot(data.T[0][4:], ls[4:], label=f"b={bs[b]}", color=plt.cm.RdYlBu(b/len(bs)))
     #plt.plot(data.T[0], savgol_filter(ls, 10, 3), label=f"b={bs[b]}", color=plt.cm.RdYlBu(b/len(bs)))
-    plt.plot(data.T[0], lss, label=f"b={bs[b]} with swap", color=plt.cm.RdYlBu(b/len(fnames)))
+    plt.plot(data.T[0], ls, label=f"b={bs[b]} with swap", color=plt.cm.RdYlBu(b/len(fnames)))
 
 for b, f in enumerate(fnames_none):
     data = np.loadtxt(f, delimiter=',')
@@ -60,7 +60,7 @@ for b, f in enumerate(fnames_none):
     lss = ls / ls[0]
     ls = np.array([fun(l) for l in ls])
 
-    plt.plot(data.T[0], lss, label=f"b={bs[b]} no swap", linestyle='-.', color=plt.cm.RdYlBu(b/len(fnames)))
+    plt.plot(data.T[0], ls, label=f"b={bs[b]} no swap", linestyle='-.', color=plt.cm.RdYlBu(b/len(fnames)))
     
 
 plt.hlines(0, xmin=min(data.T[0]), xmax=max(data.T[0]), color="grey", linestyle='-.')

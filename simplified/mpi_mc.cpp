@@ -60,7 +60,7 @@ int logand(const int *__restrict lattice1, const int *__restrict lattice2,
 }
 
 std::random_device rd_sample;
-std::mt19937 gen_sample(33); // TODO adapt to MPI
+std::mt19937 gen_sample((int)((1<<23) * MPI_Wtime())); // TODO check if this works nicely
 int sample_vacant(int *grid, int sz) {
   std::uniform_int_distribution<> dis(0, sz - 1);
   // our algorithm assumes that the number of vacant spots is always larger than
@@ -73,7 +73,7 @@ int sample_vacant(int *grid, int sz) {
 }
 
 int sample(const int* __restrict a, const int& N, const int& count, const int &part_type) {
-  std::uniform_int_distribution<> dis(0, count - 1);
+  std::uniform_int_distribution<> dis(0, N - 1);
   int res = -1;
   while (res == -1)
   {
@@ -495,7 +495,7 @@ int main(int argc, char **argv) {
     //for(int i=0;i<1000;++i)        
     //  sweep(lattice, N, beta);
 
-    int nsweeps = (1<<18) + 1;
+    int nsweeps = (1<<21) + 1;
     t0 = MPI_Wtime();
     tf = 0; 
     
@@ -507,10 +507,10 @@ int main(int argc, char **argv) {
     for(int i=1;i<=nsweeps;++i)
     {
 
-      if (uni(rd_sample) <= .33)
+      //if (uni(rd_sample) <= .33)
       {
-        auto red  = sample(lattice, N, r, 1);  
-        auto blue = sample(lattice, N, b, 2);
+        auto red  = sample(lattice, N*N*N, r, 1);  
+        auto blue = sample(lattice, N*N*N, b, 2);
         auto [i,j,k] = revert(red, N);
         auto [x,y,z] = revert(blue,N);
 
