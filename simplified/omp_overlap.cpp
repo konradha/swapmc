@@ -323,7 +323,7 @@ int main(int argc, char **argv) {
   // auto t1 = __rdtsc();
   for (int i = 1; i <= nsweeps; ++i) {
 
-    // if (uni(rd_sample) <= .33)
+     if (uni(rd_sample) <= .1)
     {
       auto red = sample(lattice, N * N * N, r, 1);
       auto blue = sample(lattice, N * N * N, b, 2);
