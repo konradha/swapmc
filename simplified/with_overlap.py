@@ -18,7 +18,7 @@ data = np.loadtxt(fname, delimiter=',')
 autocorr = data.T[1]
 overlap  = data.T[2] 
 autos = np.array([fun(l) for l in autocorr])
-overl = overlap / 20 ** 3
+overl = overlap / (3556 + 2370)
 
 plt.plot(data.T[0]+1, autos, label=f"autocorrelation", color="red")
 plt.plot(data.T[0]+1, overl, label=f"overlap", color="blue")
