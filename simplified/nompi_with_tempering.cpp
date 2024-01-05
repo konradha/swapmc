@@ -10,8 +10,6 @@
 #include <immintrin.h>
 #include <unordered_map>
 
-#include <mpi.h>
-
 void dump_slice(const int *__restrict lattice, const int N, const int i) {
   for (int j = 0; j < N; ++j) {
     for (int k = 0; k < N; ++k)
@@ -246,20 +244,8 @@ int main(int argc, char **argv) {
     std::cout << "run as ./bin beta num_threads\n";
     return 1;
   }
-
-  int rk, sz;
-  MPI_Init(&argc, &argv);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rk);
-  MPI_Comm_size(MPI_COMM_WORLD, &sz);
-
-  if (sz > 2)
-    return 1;
-
   const auto arg_beta = argv[1];
-  const auto bet = atof(arg_beta);
-
-  const auto bp = bet + .33;
-
+  const auto beta = atof(arg_beta);
   const auto arg_nsw = argv[2];
   const auto nsw = atoi(arg_nsw);
 
@@ -288,128 +274,35 @@ int main(int argc, char **argv) {
 
   if (posix_memalign((void **)&lattice, align, padded_N * sizeof(int)) != 0)
     return 1;
-  if (rk == 0)
+
     build_lattice(lattice, N, r, b);
-
-  MPI_Bcast(lattice, N * N * N, MPI_INT, 0, MPI_COMM_WORLD);
-
   if (posix_memalign((void **)&lattice_back, align, padded_N * sizeof(int)) !=
       0)
     return 1;
 
-  if (posix_memalign((void **)&cpy_lattice, align, padded_N * sizeof(int)) != 0)
-    return 1;
 
   for (int i = 0; i < N; i++)
     for (int j = 0; j < N; ++j)
       for (int k = 0; k < N; ++k)
         lattice_back[k + N * (j + i * N)] = lattice[k + N * (j + i * N)];
 
-  const int nsweeps = (1 << 20) + 1;
+  const int nsweeps = (1 << 17) + 1;
   std::vector<std::tuple<int, int, int>> data;
-  if (rk == 0) {
-    data.push_back({0, logand(lattice_back, lattice, N), 0});
-    //std::cout << 0 << "," << logand(lattice_back, lattice, N) << "," << r + b
-    //          << "\n";
-  }
 
-  float beta;
-  if (rk == 0) beta = bet;
-  else beta = bp;
-  
-  
+  data.push_back({0, logand(lattice_back, lattice, N), 0});
+
   int curr = 1;
-  int parallel_flag = 0;
-  std::uniform_real_distribution<> uni(0., 1.);
-  float full_energy = 0.;
-  float cpy_energy = 0.;
-  // auto t1 = __rdtsc();
+ 
+  
   for (int i = 1; i <= nsweeps; ++i) {
-
-  //  if (uni(rd_sample) <= .1)
-  //  {
-  //    const auto red = sample(lattice, N * N * N, r, 1);
-  //    const auto blue = sample(lattice, N * N * N, b, 2);
-  //    const auto [i, j, k] = revert(red, N);
-  //    const auto [x, y, z] = revert(blue, N);
-
-  //    const float E1 =
-  //        local_energy(lattice, N, i, j, k) + local_energy(lattice, N, x, y, z);
-  //    exchange(lattice, N, red, blue);
-  //    const float E2 =
-  //        local_energy(lattice, N, i, j, k) + local_energy(lattice, N, x, y, z);
-  //    const auto dE = std::abs(E1 - E2);
-  //    if (uni(rd_sample) >= std::exp(-beta * dE)) {
-  //      exchange(lattice, N, red, blue);
-  //    }
-  //  }
-
     sweep(lattice, N, beta);
-
-    if (i == curr) {
-      //if (rk == 1)
-      //  MPI_Send(lattice, N * N * N, MPI_INT, 0, 0, MPI_COMM_WORLD);
-      //else
-      //  MPI_Recv(cpy_lattice, N * N * N, MPI_INT, 1, 0, MPI_COMM_WORLD,
-      //           MPI_STATUS_IGNORE);
-      //// logand(lattice_back, lattice, N);
-      //if (rk == 0)
-      //  std::cout << i << "," << logand(lattice_back, lattice, N) << ","
-      //            << logand(lattice, cpy_lattice, N) << "\n";
-
-      if (rk == 0)
-        data.push_back({i, logand(lattice_back, lattice, N), 0});
-        //std::cout << i << "," << logand(lattice_back, lattice, N) << ",0\n";
+    if (i == curr) { 
+      data.push_back({i, logand(lattice_back, lattice, N), 0});
       curr *= 2;
     }
+    }
 
-    //full_energy = energy(lattice, N); 
-    //if (rk == 1)
-    //    MPI_Send(&full_energy, 1, MPI_FLOAT, 0, 0, MPI_COMM_WORLD); 
-    //else
-    //    MPI_Recv(&cpy_energy, 1, MPI_FLOAT, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        
-
-    //if (rk == 0)
-    //{
-    //    //parallel_flag = 1;
-    //    auto delta = (b - bp) * (cpy_energy - full_energy);
-    //    if (delta < 0 || uni(rd_sample) < std::exp(-delta))
-    //        parallel_flag = 1;
-    //          
-    //}
-
-    //if ( rk == 0)
-    //{
-    //    MPI_Send(&parallel_flag, 1, MPI_INT, 1, 0, MPI_COMM_WORLD);
-    //    if (parallel_flag)
-    //    {
-    //        MPI_Sendrecv_replace(lattice, N*N*N, MPI_INT, 1, 0, 1, 0, MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-    //        parallel_flag = 0;
-    //    }
-    //}
-
-    //if (rk == 1)
-    //{
-    //   MPI_Recv(&parallel_flag , 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    //    if (parallel_flag)
-    //    {
-    //        MPI_Sendrecv_replace(lattice, N*N*N, MPI_INT, 0, 0, 0, 0, MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-    //        parallel_flag = 0;
-    //    }
-    //}
-
-
-    
-
-
-  }
-  // auto t2 = __rdtsc();
-  // std::cout << nsw << "," << (float)(t2 - t1) / (1e6) << "\n";
   free(lattice);
   free(lattice_back);
-  if (rk == 0)
-    free(cpy_lattice);
-  MPI_Finalize();
   return 0;
 }
