@@ -9,7 +9,7 @@ def fun(x):
     rho1 = 3556 / 20 ** 3
     rho2 = 2370 / 20 ** 3
     rho = rho1 + rho2
-    c0 = rho * (rho1**2 + rho2**2)
+    c0 = rho **2 * (rho1 + rho2)
     N = rho * 20 **3
     return (1./N * x - c0) / (1. -c0)
 
