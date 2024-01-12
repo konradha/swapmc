@@ -182,7 +182,7 @@ static inline float local_energy(short *__restrict grid, const int &N,
   return current * current;
 }
 
-const float scale = 25.;
+const float scale = 25.; // the energy difference has range [-25, 25] -- somewhat Gaussian but with gaps!
 static inline void step(short *__restrict lattice, const int N, const int &i, const int &j, const int &k,
                  std::vector<std::mt19937> &gens,
                  std::vector<std::uniform_int_distribution<>> &nn_dis,
@@ -195,7 +195,7 @@ static inline void step(short *__restrict lattice, const int N, const int &i, co
 
     const auto nn = ::nn[site];
     const auto mv = nn[nn_dis[t](gens[t])];
-    //if (lattice[site] == lattice[mv]) return;
+    if (lattice[site] == lattice[mv]) return;
 
     auto [mi, mj, mk] = revert(mv, N);
 
@@ -204,23 +204,6 @@ static inline void step(short *__restrict lattice, const int N, const int &i, co
 
     const volatile float E2 = local_energy(lattice, N, i, j, k) + local_energy(lattice, N, mi, mj, mk);
     const auto dE = (E1 - E2 + scale) / (2*scale);
-
-    //#pragma omp critical
-    //std::cout << E1 << "," << E2 << "," << dE << "\n";
-    //std::cout << unis[t](gens[omp_get_num_threads() + t]) << "  \"<\"  " <<  std::exp(-beta *dE) << "\n";
-    
-    //      {
-    //        //std::cout << "beta = " << beta << "\n";
-    //        //std::cout << "site " << site << ", dE " << dE << ", rand " <<
-    //        //unis[t](gens[omp_get_num_threads() + t]) << ", MC " <<
-    //        //std::exp(-beta * dE) << "\n"; std::cout << "accept " <<
-    //        //(unis[t](gens[omp_get_num_threads() + t]) < std::exp(-beta *
-    //        //dE) && dE != 0) << "\n";
-    //        if( dE <0)
-    //        std::cout << "dE = " << dE << "  std::exp(-beta * dE) = " << std::exp(beta * dE)
-    //            << "  unis[t](gens[omp_get_num_threads() + t]) < std::exp(-beta * dE) = "  
-    //            << (unis[t](gens[omp_get_num_threads() + t]) < std::exp(beta * dE)) << "\n";
-    //      }
 
     if (unis[t](gens[omp_get_num_threads() + t]) < std::exp(-beta * dE)) {
       // accept move
@@ -262,6 +245,7 @@ void sweep(short *__restrict lattice, const int N,
 
   std::vector<int> idx = {0, 1, 2};
   int ii = 0;
+  // TODO: check if this can enhance statistics
   // std::shuffle(idx.begin(), idx.end(), gens[0]);
   for (int s = 0; s < 3; ++s) {
     ii = idx[s];
