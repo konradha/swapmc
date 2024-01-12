@@ -173,12 +173,18 @@ static inline float local_energy(int *__restrict grid, const int &N,
 
   const auto [l, r, u, d, f, b] = nn[site];
 
+  // load all nearest neighbors of site into 1 _mm256
   __m256 v = _mm256_set_ps(grid[u] & 1, grid[d] & 1, grid[l] & 1, grid[r] & 1,
                            grid[f] & 1, grid[b] & 1, 0., 0.);
+  // lowest 4 nearest neighbors into _m128
   __m128 v_hi = _mm256_extractf128_ps(v, 1);
+  // highest 4 nearest neighbors into _m128
   __m128 v_lo = _mm256_extractf128_ps(v, 0);
+  // add lowest and highest
   v_lo = _mm_add_ps(v_lo, v_hi);
+  // shuffle around
   v_lo = _mm_add_ss(v_lo, _mm_shuffle_ps(v_lo, v_lo, 1));
+  // unpack sum of all nn into `current` float
   current = _mm_cvtss_f32(v_lo);
 
   current = connection - current;
