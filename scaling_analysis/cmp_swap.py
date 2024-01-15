@@ -5,7 +5,7 @@ import sys
 
 
 Ls = [5, 10, 15, 20]
-bs = [f"{i}.{d}" for i in [1, 5, 10, 20, 30, 40] for d in [0]]
+bs = [f"{i}.{d}" for i in range(1,6) for d in [0]]
 
 
 fnames = [f"run_L_{L}_beta_{b}_sliced_0.txt" for b in bs for L in Ls]
@@ -62,5 +62,6 @@ for i in range(len(Ls)):
 
 axs[0].legend(loc='upper right', bbox_to_anchor=(1.05, .55))
 
-fig.suptitle("full line = no swap; dashed = swap at every sweep")
+fig.suptitle("full line = no swap; dashed = 1 swap attempt at every sweep;\nscale=125.; A=5.; only move to empty sites\
+        allowed;\nhopping attempts dynamics with dE = (E2 - E1 + scale) / (2 * scale)")
 plt.show()

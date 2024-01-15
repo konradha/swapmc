@@ -10,6 +10,8 @@
 #include <immintrin.h>
 #include <unordered_map>
 
+#include <cmath>
+
 void dump_slice(const short *__restrict lattice, const int N, const int i) {
   for (int j = 0; j < N; ++j) {
     for (int k = 0; k < N; ++k)
@@ -172,17 +174,32 @@ static inline float local_energy(short *__restrict grid, const int &N,
   const auto site = k + N * (j + N * i);
   if (grid[site] == 0) return 0.;
 
-  const float connection = grid[site] == 1 ? 3. : 5.;
-  float current = 0.;
+  const float connection = grid[site] == 1 ? 3. : 5.; 
   const auto [l, r, u, d, f, b] = nn[site];
-  current =
+  float current =
       static_cast<float>(ONETWO(grid[u]) + ONETWO(grid[d]) + ONETWO(grid[l]) +
                          ONETWO(grid[r]) + ONETWO(grid[f]) + ONETWO(grid[b]));
   current = current - connection;
   return current * current;
 }
 
-const float scale = 25.; // the energy difference has range [-25, 25] -- somewhat Gaussian but with gaps!
+static inline const float nn_energy(short *__restrict lattice, const int N, const int &i, const int &j, const int &k)
+{
+  const auto site = k + N * (j + N * i);
+  if (lattice[site] == 0) return 0.;
+  float res = local_energy(lattice, N, i, j, k);
+//#pragma unroll(6)
+  for(const auto & e : nn[site]) {
+      const auto [m, l, n] = revert(e, N);
+      res += local_energy(lattice, N, m, l, n);
+  }
+  return res;
+}
+
+
+// what works: shifted + scaled dE
+const float scale = 125.; // the energy difference has range [-25, 25] -- somewhat Gaussian but with gaps!
+const float A = 5.;
 static inline void step(short *__restrict lattice, const int N, const int &i, const int &j, const int &k,
                  std::vector<std::mt19937> &gens,
                  std::vector<std::uniform_int_distribution<>> &nn_dis,
@@ -190,22 +207,31 @@ static inline void step(short *__restrict lattice, const int N, const int &i, co
                  const float beta)
 {
     const auto t = omp_get_thread_num();
+    const auto nthreads = omp_get_num_threads();
     const auto site = k + N * (j + i * N);
     
 
     const auto nn = ::nn[site];
     const auto mv = nn[nn_dis[t](gens[t])];
-    if (lattice[site] == lattice[mv]) return;
-
+    if (!(lattice[site] > 0 && lattice[mv] == 0)) return;
     auto [mi, mj, mk] = revert(mv, N);
 
-    const float E1 = local_energy(lattice, N, i, j, k) + local_energy(lattice, N, mi, mj, mk);
+    const volatile float E1 = nn_energy(lattice, N, i, j, k) + nn_energy(lattice, N, mi, mj, mk);// local_energy(lattice, N, i, j, k) + local_energy(lattice, N, mi, mj, mk);
     exchange(lattice, N, site, mv);
 
-    const volatile float E2 = local_energy(lattice, N, i, j, k) + local_energy(lattice, N, mi, mj, mk);
-    const auto dE = (E1 - E2 + scale) / (2*scale);
+    const volatile float E2 = nn_energy(lattice, N, i, j, k) + nn_energy(lattice, N, mi, mj, mk);// local_energy(lattice, N, i, j, k) + local_energy(lattice, N, mi, mj, mk);
+    const auto dE = (E2-E1+scale) / 2 / scale; 
+    //const auto dE = (E2-E1) / scale;
+    const auto w0 = 1.;
+    // Metropolis criterion
+    const auto crit = w0 * (std::exp(-beta * dE * A) < 1.? std::exp(-beta * dE * A) : 1.); 
+    // Glauber dynamics
+    //const auto crit = w0 * ( .5 * (1. - std::tanh(std::exp(-(dE) * beta))));
 
-    if (unis[t](gens[omp_get_num_threads() + t]) < std::exp(-beta * dE)) {
+//#pragma omp critical
+//    std::cout << E1 << "," << E2 << "," << E2-E1 << "\n";
+
+    if (unis[t](gens[nthreads + t]) < crit) {
       // accept move
       return;
     }
@@ -245,8 +271,9 @@ void sweep(short *__restrict lattice, const int N,
 
   std::vector<int> idx = {0, 1, 2};
   int ii = 0;
-  // TODO: check if this can enhance statistics
-  // std::shuffle(idx.begin(), idx.end(), gens[0]);
+  // shuffle traversal for every sweep
+#pragma omp master
+  std::shuffle(idx.begin(), idx.end(), gens[0]);
   for (int s = 0; s < 3; ++s) {
     ii = idx[s];
 #pragma omp parallel for collapse(1)                                           \
@@ -391,15 +418,15 @@ int main(int argc, char **argv) {
 
     if (i == curr) {
       const auto anded = logand(lattice, lattice_back, N);
-      data.push_back({i, anded, 0});
+      data.push_back({i, anded, energy(lattice, N)});
       curr *= 2;
       if ((float)(anded) / (float)(numparts) <= .15)
         break; 
     }
   }
 
-  for (const auto &[epoch, anded, _] : data)
-    std::cout << epoch << "," << anded << "\n";
+  for (const auto &[epoch, anded, e] : data)
+    std::cout << epoch << "," << anded << "," << e <<  "\n";
 
   free(lattice);
   free(lattice_back);
