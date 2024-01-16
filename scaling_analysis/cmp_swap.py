@@ -62,6 +62,6 @@ for i in range(len(Ls)):
 
 axs[0].legend(loc='upper right', bbox_to_anchor=(1.05, .55))
 
-fig.suptitle("full line = no swap; dashed = 1 swap attempt at every sweep;\nscale=125.; A=5.; only move to empty sites\
+fig.suptitle("full line = no swap; dashed = 1 swap attempt at every sweep;\nscale=375.; A=5.; only move to empty sites\
         allowed;\nhopping attempts dynamics with dE = (E2 - E1 + scale) / (2 * scale)")
 plt.show()

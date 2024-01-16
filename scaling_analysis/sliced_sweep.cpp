@@ -198,7 +198,7 @@ static inline const float nn_energy(short *__restrict lattice, const int N, cons
 
 
 // what works: shifted + scaled dE
-const float scale = 125.; // the energy difference has range [-25, 25] -- somewhat Gaussian but with gaps!
+const float scale = 375;// 750.; // the energy difference has range [-750,750] -- somewhat Gaussian but with gaps! -- truncated the Gaussian for now
 const float A = 5.;
 static inline void step(short *__restrict lattice, const int N, const int &i, const int &j, const int &k,
                  std::vector<std::mt19937> &gens,
@@ -245,6 +245,7 @@ void slice_sweep(short *__restrict lattice, const int N, const int &i,
                  std::vector<std::uniform_int_distribution<>> &nn_dis,
                  std::vector<std::uniform_real_distribution<>> &unis,
                  const float beta) {
+  // TODO: figure out planar checkerboard sweep to accelerate the slicing
   for (int j = 0; j < N; j++) {
     for (int k = 0; k < N; k++) {
       step(lattice, N, i, j, k, gens, nn_dis, unis, beta);
@@ -257,28 +258,27 @@ void sweep(short *__restrict lattice, const int N,
            std::vector<std::uniform_int_distribution<>> &nn_dis,
            std::vector<std::uniform_real_distribution<>> &unis,
            const float beta) {
+  const int mod = N % 4;
 #pragma omp master
-  {
-    if (N % 3 == 2) {
-      slice_sweep(lattice, N, N - 1, gens, nn_dis, unis, beta);
-      slice_sweep(lattice, N, N - 2, gens, nn_dis, unis, beta);
-    }
-
-    if (N % 3 == 1) {
-      slice_sweep(lattice, N, N - 1, gens, nn_dis, unis, beta);
+  {   
+    if (mod) { 
+      for(int i=N-mod;i<N;++i)  
+          slice_sweep(lattice, N, i, gens, nn_dis, unis, beta);
     }
   }
 
-  std::vector<int> idx = {0, 1, 2};
+  std::vector<int> idx = {0, 1, 2, 3};
   int ii = 0;
   // shuffle traversal for every sweep
 #pragma omp master
   std::shuffle(idx.begin(), idx.end(), gens[0]);
-  for (int s = 0; s < 3; ++s) {
+
+
+  for (int s = 0; s < 4; ++s) {
     ii = idx[s];
 #pragma omp parallel for collapse(1)                                           \
     schedule(auto) // shared(lattice) firstprivate(N) shared(nn)
-    for (int i = ii; i < N - N % 3; i += 3) {
+    for (int i = ii; i < N - mod; i += 4) {
       slice_sweep(lattice, N, i, gens, nn_dis, unis, beta);
     }
 #pragma omp barrier
@@ -292,7 +292,7 @@ float energy(short *__restrict lattice, const int &N) {
     for (int j = 0; j < N; ++j)
       for (int k = 0; k < N; ++k)
         e += local_energy(lattice, N, i, j, k);
-  return e;
+  return A * e;
 }
 
 int get_num_threads(void) {
@@ -404,12 +404,12 @@ int main(int argc, char **argv) {
         auto [ii, j, k] = revert(red, N);
         auto [x, y, z] = revert(blue, N);
 
-        float E1 = local_energy(lattice, N, ii, j, k) +
-                   local_energy(lattice, N, x, y, z);
+        float E1 = nn_energy(lattice, N, ii, j, k) +
+                   nn_energy(lattice, N, x, y, z);
         exchange(lattice, N, red, blue);
-        float E2 = local_energy(lattice, N, ii, j, k) +
-                   local_energy(lattice, N, x, y, z);
-        auto dE = std::abs(E1 - E2);
+        float E2 = nn_energy(lattice, N, ii, j, k) +
+                   nn_energy(lattice, N, x, y, z);
+        auto dE = std::abs(E2 - E1);
         if (uni(gen) >= std::exp(-beta * dE)) {
           exchange(lattice, N, red, blue);
         }
