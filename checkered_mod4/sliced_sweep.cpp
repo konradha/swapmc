@@ -172,10 +172,9 @@ std::unordered_map<int, std::array<int, 6>> nn;
 static inline float local_energy(short *__restrict grid, const int &N,
                                  const int &i, const int &j, const int &k) {
   const auto site = k + N * (j + N * i);
-  if (grid[site] == 0)
-    return 0.;
+  if (grid[site] == 0) return 0.;
 
-  const float connection = grid[site] == 1 ? 3. : 5.;
+  const float connection = grid[site] == 1 ? 3. : 5.; 
   const auto [l, r, u, d, f, b] = nn[site];
   float current =
       static_cast<float>(ONETWO(grid[u]) + ONETWO(grid[d]) + ONETWO(grid[l]) +
@@ -184,71 +183,85 @@ static inline float local_energy(short *__restrict grid, const int &N,
   return current * current;
 }
 
-static inline const float nn_energy(short *__restrict lattice, const int N,
-                                    const int &i, const int &j, const int &k) {
+static inline const float nn_energy(short *__restrict lattice, const int N, const int &i, const int &j, const int &k)
+{
   const auto site = k + N * (j + N * i);
-  if (lattice[site] == 0)
-    return 0.;
+  if (lattice[site] == 0) return 0.;
   float res = local_energy(lattice, N, i, j, k);
-  //#pragma unroll(6)
-  for (const auto &e : nn[site]) {
-    const auto [m, l, n] = revert(e, N);
-    res += local_energy(lattice, N, m, l, n);
+//#pragma unroll(6)
+  for(const auto & e : nn[site]) {
+      const auto [m, l, n] = revert(e, N);
+      res += local_energy(lattice, N, m, l, n);
   }
   return res;
 }
 
+
 // what works: shifted + scaled dE
-const float scale =
-    375; // 750.; // the energy difference has range [-750,750] -- somewhat
-         // Gaussian but with gaps! -- introduced some truncation
+const float scale = 750;// 750.; // the energy difference has range [-750,750] -- somewhat Gaussian but with gaps! -- truncated the Gaussian for now
 const float A = 5.;
-static inline void step(short *__restrict lattice, const int N, const int &i,
-                        const int &j, const int &k,
-                        std::vector<std::mt19937> &gens,
-                        std::vector<std::uniform_int_distribution<>> &nn_dis,
-                        std::vector<std::uniform_real_distribution<>> &unis,
-                        const float beta) {
-  const auto t = omp_get_thread_num();
-  const auto nthreads = omp_get_num_threads();
-  const auto site = k + N * (j + i * N);
+static inline void step(short *__restrict lattice, const int N, const int &i, const int &j, const int &k,
+                 std::vector<std::mt19937> &gens,
+                 std::vector<std::uniform_int_distribution<>> &nn_dis,
+                 std::vector<std::uniform_real_distribution<>> &unis,
+                 const float beta)
+{
+    const auto t = omp_get_thread_num();
+    const auto nthreads = omp_get_num_threads();
+    const auto site = k + N * (j + i * N);
+    
 
-  const auto nn = ::nn[site];
-  const auto mv = nn[nn_dis[t](gens[t])];
-  if (!(lattice[site] > 0 && lattice[mv] == 0))
-    return;
-  auto [mi, mj, mk] = revert(mv, N);
+    const auto nn = ::nn[site];
+    const auto mv = nn[nn_dis[t](gens[t])];
+    if (!(lattice[site] > 0 && lattice[mv] == 0)) return;
+    auto [mi, mj, mk] = revert(mv, N);
 
-  const volatile float E1 =
-      nn_energy(lattice, N, i, j, k) +
-      nn_energy(lattice, N, mi, mj,
-                mk); // local_energy(lattice, N, i, j, k) +
-                     // local_energy(lattice, N, mi, mj, mk);
-  exchange(lattice, N, site, mv);
-
-  const volatile float E2 =
-      nn_energy(lattice, N, i, j, k) +
-      nn_energy(lattice, N, mi, mj,
-                mk); // local_energy(lattice, N, i, j, k) +
-                     // local_energy(lattice, N, mi, mj, mk);
-  const auto dE = (E2 - E1 + scale) / 2 / scale;
-  // const auto dE = (E2-E1) / scale;
-  const auto w0 = 1.;
-  // Metropolis criterion
-  const auto crit =
-      w0 * (std::exp(-beta * dE * A) < 1. ? std::exp(-beta * dE * A) : 1.);
-  // Glauber dynamics
-  // const auto crit = w0 * ( .5 * (1. - std::tanh(std::exp(-(dE) * beta))));
-
-  //#pragma omp critical
-  //    std::cout << E1 << "," << E2 << "," << E2-E1 << "\n";
-
-  if (unis[t](gens[nthreads + t]) < crit) {
-    // accept move
-    return;
-  } else {
+    const volatile float E1 = nn_energy(lattice, N, i, j, k) + nn_energy(lattice, N, mi, mj, mk);// local_energy(lattice, N, i, j, k) + local_energy(lattice, N, mi, mj, mk);
     exchange(lattice, N, site, mv);
-  }
+
+    const volatile float E2 = nn_energy(lattice, N, i, j, k) + nn_energy(lattice, N, mi, mj, mk);// local_energy(lattice, N, i, j, k) + local_energy(lattice, N, mi, mj, mk);
+    const auto dE = (E2-E1+scale) / 2 / scale; 
+    //const auto dE = (E2-E1) / scale;
+    const auto w0 = 1.;
+    // Metropolis criterion
+    const auto crit = w0 * (std::exp(-beta * dE * A) < 1.? std::exp(-beta * dE * A) : 1.); 
+    // Glauber dynamics
+    //const auto crit = w0 * ( .5 * (1. - std::tanh(std::exp(-(dE) * beta))));
+
+//#pragma omp critical
+//    std::cout << E1 << "," << E2 << "," << E2-E1 << "\n";
+
+    if (unis[t](gens[nthreads + t]) < crit) {
+      // accept move
+      return;
+    }
+    else {
+      exchange(lattice, N, site, mv);
+    }    
+}
+
+
+void slice_sweep(short *__restrict lattice, const int N, const int &i,
+                 std::vector<std::mt19937> &gens,
+                 std::vector<std::uniform_int_distribution<>> &nn_dis,
+                 std::vector<std::uniform_real_distribution<>> &unis,
+                 const float beta) {
+//#pragma omp parallel
+    {
+      const auto stride = 4;
+      for(int s = 0; s < stride; ++s)
+        for(int t = 0; t < stride; ++t)
+
+//#pragma omp for collapse(2)
+          for (int j = s; j < N; j+=stride) {
+            for (int k = t; k < N; k+=stride) {
+//#pragma omp critical
+//                if(omp_get_thread_num() != 0)
+//                    std::cout << omp_get_thread_num() << ": " << i << "," << j << "," << k << "\n";
+              step(lattice, N, i, j, k, gens, nn_dis, unis, beta);
+            }
+          }
+    }
 }
 
 void sweep(short *__restrict lattice, const int N,
@@ -256,26 +269,24 @@ void sweep(short *__restrict lattice, const int N,
            std::vector<std::uniform_int_distribution<>> &nn_dis,
            std::vector<std::uniform_real_distribution<>> &unis,
            const float beta) {
-  const int stride = 4;
-  const int mod = N % stride;
-  assert(mod == 0 && "L must be a factor of 4");
+//#pragma omp parallel
+    {
+      const int stride = 4;
+      const int mod = N % stride;
+      assert( mod == 0);
 
-  // full checkerboard traversal:
-  // - chunk up the lattice
-  // - introduce heavy waits (3 * 3 * 3)
-  // - every thread j running "step" on its own site
-  //   will not experienced any interference by another thread
-//#pragma omp parallel // define parallel region to not incur thread spawn penalties
-  for (int r = 0; r < 4; ++r)
-    for (int s = 0; s < 4; ++s)
-      for (int t = 0; t < 4; ++t) {
-#pragma omp for collapse(3) schedule(auto)
-        for (int i = r; i < N; i += stride)
-          for (int j = s; j < N; j += stride)
-            for (int k = t; k < N; k += stride)
-              step(lattice, N, i, j, k, gens, nn_dis, unis, beta);
-//#pragma omp barrier
+      //std::vector<int> idx = {0, 1, 2, 3};
+      int ii = 0;
+
+      for (int s = 0; s < stride; ++s) {
+//#pragma omp barrier // everyone needs acces to same s
+        ii = s;
+#pragma omp for collapse(1)
+        for (int i = ii; i < N - mod; i += stride) {
+          slice_sweep(lattice, N, i, gens, nn_dis, unis, beta);
+        }
       }
+    }
 }
 
 float energy(short *__restrict lattice, const int &N) {
@@ -323,13 +334,12 @@ int main(int argc, char **argv) {
 
   assert(rho1 + rho2 == rho);
 
-  assert(L % 4 == 0 && "L needs to be a factor of 4!"); 
-  assert(L >= 8);
-  if (L <= 10)
+  if (L < 7)
+    omp_set_num_threads(1);
+  else if (L < 10)
     omp_set_num_threads(2);
   else
     omp_set_num_threads(nsw);
-
   ::nn = get_nn_list(N);
 
   short *lattice = nullptr;
@@ -385,11 +395,10 @@ int main(int argc, char **argv) {
   std::random_device rd;
   std::mt19937 gen(rd());
   std::uniform_real_distribution<> uni(0., 1.);
-
-
+  assert (L % 4 == 0 && "L must be a factor of 4!");
   for (int i = 1; i <= nsweeps; ++i) {
+#pragma omp parallel
     sweep(lattice, N, thread_generators, nn_dis, unis, beta);
-
     if (swap) {
 #pragma omp master
       {
@@ -399,11 +408,11 @@ int main(int argc, char **argv) {
         auto [ii, j, k] = revert(red, N);
         auto [x, y, z] = revert(blue, N);
 
-        float E1 =
-            nn_energy(lattice, N, ii, j, k) + nn_energy(lattice, N, x, y, z);
+        float E1 = nn_energy(lattice, N, ii, j, k) +
+                   nn_energy(lattice, N, x, y, z);
         exchange(lattice, N, red, blue);
-        float E2 =
-            nn_energy(lattice, N, ii, j, k) + nn_energy(lattice, N, x, y, z);
+        float E2 = nn_energy(lattice, N, ii, j, k) +
+                   nn_energy(lattice, N, x, y, z);
         auto dE = std::abs(E2 - E1);
         if (uni(gen) >= std::exp(-beta * dE)) {
           exchange(lattice, N, red, blue);
@@ -411,20 +420,17 @@ int main(int argc, char **argv) {
       }
     }
 
-    // duplicating data for all threads for now
-    {
-      if (i == curr) {
-        const auto anded = logand(lattice, lattice_back, N);
-        data.push_back({i, anded, energy(lattice, N)});
-        curr *= 2;
-        if ((float)(anded) / (float)(numparts) <= .15)
-          break;
-      }
+    if (i == curr) {
+      const auto anded = logand(lattice, lattice_back, N);
+      data.push_back({i, anded, energy(lattice, N)});
+      curr *= 2;
+      if ((float)(anded) / (float)(numparts) <= .15)
+        break; 
     }
   }
 
   for (const auto &[epoch, anded, e] : data)
-    std::cout << epoch << "," << anded << "," << e << "\n";
+    std::cout << epoch << "," << anded << "," << e <<  "\n";
 
   free(lattice);
   free(lattice_back);
