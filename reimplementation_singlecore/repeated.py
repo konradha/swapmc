@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import networkx as nx
+import sys
 
 
 def build_lattice(L, num_red, num_blue):
@@ -11,22 +13,35 @@ def build_lattice(L, num_red, num_blue):
 
     grid[red_sites] = 1
     grid[blue_sites] = 2
+    for _ in range(10):
+        np.random.shuffle(grid)
 
     return grid
 
 def get_neighbors(i, j, k, N):
-    ii = (i-1) % N
-    jj = (j-1) % N
-    kk = (k-1) % N
+    iprev = (i-1) % N
+    jprev = (j-1) % N
+    kprev = (k-1) % N
 
-    f = k + N * (j + ii*N)
-    b = k + N * (j + (i+1)%N*N)
-    u = k + N * (jj + i*N)
-    d = k + N * ((j+1)%N + i*N)
-    l = kk + N*(j + i*N)
-    r = (k+1)%N + N*(j + i*N)
+    inext = (i+1) % N
+    jnext = (j+1) % N
+    knext = (k+1) % N
 
-    return np.array([u, d, l, r, f, b], dtype=int)
+    f = k + N * (j + iprev * N)
+    b = k + N * (j + inext * N)
+
+    u = k + N * (jprev + i * N)
+    d = k + N * (jnext + i * N)
+
+    l = kprev + N * (j + i * N)
+    r = knext + N * (j + i * N)
+
+    for i, n1 in enumerate([f, b, u, d, l, r]):
+        for j, n2 in enumerate([f, b, u, d, l, r]): 
+            if i != j:
+                assert(n1 != n2)
+
+    return np.array([u, d, l, r, f, b], dtype=np.int32)
 
 def get_nn_list(N):
     neighbor_map = {}
@@ -63,17 +78,22 @@ def exchange(lattice, site, mv):
     lattice[site], lattice[mv] = lattice[mv], lattice[site]
 
 
-def dE(lattice, site, mv, nn_list):
+def dE(lattice, site, mv, nn_list, kinetic=None):
     E1 = nn_e(lattice, site, nn_list) + nn_e(lattice, mv, nn_list) 
     exchange(lattice, site, mv)
     E2 = nn_e(lattice, site, nn_list) + nn_e(lattice, mv, nn_list)
     exchange(lattice, site, mv)
-    return E2 - E1
+    
+    kinetic = 0.5
+    if kinetic:
+        return kinetic + (E2 - E1) / 75
+    else:
+        return E2 - E1
     
 
 
 def main():
-    L = 20
+    L = 12
     rho = 0.75
     rho1 = 0.6 * rho
     beta = 5.
@@ -81,64 +101,97 @@ def main():
     r = int(np.round(L**3 * rho1))
     b = N - r
     print(N, r, b)
+    print(L, L**3)
+
+
     grid = build_lattice(L, r, b)
     nns  = get_nn_list(L)
-    des = []
-    accept = []
-    reject = []
-    for i in range(L):
-        for j in range(L):
-            for k in range(L):
-                site = k + L * (j + i * L)
-                if grid[site] == 0: continue # only move particles
-                for n in nns[site]:
-                    if grid[n] != 0: continue # only move to empty slots
-                    de = dE(grid, site, n, nns)
-                    if np.random.random() < np.exp( -beta * de):
-                        accept.append((site, n))
-                    else:
-                        reject.append((site, n))
 
-                    des.append(de)
+    if len(sys.argv) > 1:
     
-    u, c = np.unique(des, return_counts=1)
-    mask = u <= 0
-    print("immediate accepts", np.sum(c[mask]) / np.sum(c))
-    plt.bar(u, c)
-    plt.yscale("log")
-    plt.show()
 
-    plt.clf()
+        g = nx.Graph() 
+        for p in nns.keys():
+            g.add_node(p, attribute=grid[p])
 
-    dA = []
-    for s, m in accept:
-        dA.append(abs(s-m))
-    dA = np.array(dA)
-    dR = []
-    for s, m in reject:
-        dR.append(abs(s-m))
-    dR = np.array(dR)
-    ua, ca = np.unique(dA, return_counts=True)
-    ur, cr = np.unique(dR, return_counts=True)
-
-    u = np.linspace(0,5,6)
-    #plt.bar(ua-5., ca, width=10., color='red', label="accepted distances")
-    #plt.bar(ur+5., cr, width=10., color='blue', label="rejected distances")
-    #plt.xticks(ur)
-
-    plt.bar(u-.15, ca, width=.24, color='red', label="accepted distances")
-    plt.bar(u+.15, cr, width=.24, color='blue', label="rejected distances")
-    plt.xticks(u)
-
-    #### THERE SEEMS TO BE BIAS: positive-direction neighbor moves are happening much more often ?!
+        for p, nn in nns.items(): 
+            for n in nn:
+                g.add_edge(p, n,)
+        print(nx.is_connected(g))
+        print(nx.is_k_regular(g, k=6))
+        nx.draw(g, with_labels=True)
+        plt.show()
 
     
-    plt.title("investigating if bias exists in neighbor moves")
 
-    plt.yscale("log")
-    plt.legend()
-    plt.show()
-    
+    else:
+        
+        des = []
+        accept = []
+        reject = []
+        for i in range(L):
+            for j in range(L):
+                for k in range(L):
+                    site = k + L * (j + i * L)
+                    if grid[site] == 0: continue # only move particles
+                    for n in nns[site]:
+                        if grid[n] != 0: continue # only move to empty slots
+                        de = dE(grid, site, n, nns)
+                        if np.random.random() < np.exp( -beta * de):
+                            accept.append((site, n))
+                        else:
+                            reject.append((site, n))
+
+                        des.append(de)
+        
+        u, c = np.unique(des, return_counts=1)
+        print(np.min(u), np.max(u))
+        mask = u <= 0
+        print("immediate accepts", np.sum(c[mask]) / np.sum(c))
+        plt.bar(u, c)
+        plt.yscale("log")
+        plt.show()
+
+        plt.clf()
+
+        dA = []
+        for s, m in accept:
+            dA.append((s-m))
+        dA = np.array(dA)
+        dR = []
+        for s, m in reject:
+            dR.append((s-m))
+        dR = np.array(dR)
+        ua, ca = np.unique(dA, return_counts=True)
+        ur, cr = np.unique(dR, return_counts=True)
+
+       
+
+        plt.bar(ua-2, ca, width=5, color='red', label="accepted distances")
+        plt.bar(ur+2, cr, width=5, color='blue', label="rejected distances")
+
+        for d in [-1, 1, -(L-1), L-1, -(L**2-1), L**2-1]:
+            plt.vlines(d, ymin=0, ymax=np.max(ca), linestyle='-.', alpha=.2, color="black")
+
+          
+        
+        plt.title("investigating if bias exists in neighbor moves")
+
+        plt.yscale("log")
+        plt.legend()
+        plt.show()
+
+        plt.clf()
+
+        plt.bar(np.linspace(0,len(ua),len(ua))-.1, ca, color='green')
+        plt.bar(np.linspace(0,len(ur),len(ur))+.1, cr, color='red')
+        plt.title("without actual differences; same plot as before: edge cases about 9 times less often (due to PBC)")
+
+        plt.gca().set_xticks(np.linspace(0,len(ua),len(ua)))
+        plt.gca().set_xticklabels(ua)
+        plt.show()
+        
+        
 
 
 
