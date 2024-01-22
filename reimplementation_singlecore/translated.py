@@ -81,9 +81,9 @@ def step(grid, i, j, k, beta, nn, nn_list, distances = None, energies = None):
     dist = (nn_k + L * (nn_j + L * nn_i)) - (k + L * ( j + L * i))
     distances[-1] = dist
 
-    E1 = get_nn_energy(grid, i, j, k, nn_list)
+    E1 = get_nn_energy(grid, i, j, k, nn_list) + get_nn_energy(grid, nn_i, nn_j, nn_k, nn_list)
     swap(grid, i, j, k, nn_i, nn_j, nn_k)
-    E2 = get_nn_energy(grid, i, j, k, nn_list)
+    E2 = get_nn_energy(grid, i, j, k, nn_list) + get_nn_energy(grid, nn_i, nn_j, nn_k, nn_list)
     dE = E2 - E1 #abs(E2 - E1) # need absolute value here?
     energies.append(E2 - E1) 
     if rng.random() < np.exp(-beta * dE):
