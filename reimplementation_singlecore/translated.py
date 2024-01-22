@@ -92,15 +92,8 @@ def step(grid, i, j, k, beta, nn, nn_list, distances = None, energies = None):
 
 
 def sweep(grid, beta, nn, d = None, e = None):
-    
-    for offset in range(3):
-        distribute_sweep(grid, offset, beta, nn, d, e)
-
-
-def distribute_sweep(grid, offset, beta, nn, d = None, e = None):
-    L = grid.shape[0]
-    for ii in range((L - offset + 2) // 3):
-        i = offset + ii * 3
+    L = grid.shape[0] 
+    for i in range(L):
         indices_j = np.random.choice(L, L)
         indices_k = np.random.choice(L, L)
         inner_sweep(grid, i, beta, nn, indices_j, indices_k, d, e)
@@ -157,7 +150,7 @@ if __name__ == '__main__':
     initial = deepcopy(lattice)
 
     datas = []; overlaps = []
-    nsweeps = 1 << 8
+    nsweeps = 1 << 7
 
     curr = 1
     distances = []
