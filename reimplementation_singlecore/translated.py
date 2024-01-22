@@ -181,21 +181,23 @@ if __name__ == '__main__':
         
 
         energies = np.array(energies)
-        print(energies)
+        #print(energies)
         neg = energies <= 0
         pos = energies > 0
         un, cn = np.unique(energies[neg], return_counts = True) 
         up, cp = np.unique(energies[pos], return_counts = True)
         plt.bar(un-.1, cn, color='red')
         plt.bar(up+.1, cp, color='blue')
+        plt.title("dE")
         plt.show()
         plt.clf()
         
 
         u, c = np.unique(energies, return_counts = True)
-        print(c)
+        #print(c)
         plt.bar(u, c, width=20, label=f"{beta=}")
         plt.legend()
+        plt.title("dE, no 0 comparison")
         plt.show()
         energies = []
 
@@ -203,9 +205,10 @@ if __name__ == '__main__':
 
         distances = np.array(distances)
         u, c = np.unique(distances, return_counts = True)
-        print(c)
+        #print(c)
         plt.bar(u, c, width=20, label=f"{beta=}")
         plt.legend()
+        plt.title("distances of moves")
         plt.show()
 
         distances = []
