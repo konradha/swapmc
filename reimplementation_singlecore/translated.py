@@ -6,7 +6,6 @@ from tqdm import tqdm
 
 rng = np.random.default_rng()
 
-
 def get_nn(i, j, k, L):
     l = i, j, (k - 1) % L
     r = i, j, (k + 1) % L
@@ -85,11 +84,9 @@ def step(grid, i, j, k, beta, nn, nn_list, distances = None, energies = None):
     E1 = get_nn_energy(grid, i, j, k, nn_list)
     swap(grid, i, j, k, nn_i, nn_j, nn_k)
     E2 = get_nn_energy(grid, i, j, k, nn_list)
-    dE = E2 - E1 #abs(E2 - E1) # need absolute value here, apparently
-    energies.append(E2 - E1)
-    #print(E1, E2, dE)
+    dE = E2 - E1 #abs(E2 - E1) # need absolute value here?
+    energies.append(E2 - E1) 
     if rng.random() < np.exp(-beta * dE):
-        #if dE == 0: print(beta, i, j, k, rng.random(), E1, E2, nn_ty, site_ty)
         return
     swap(grid, i, j, k, nn_i, nn_j, nn_k)
 
@@ -149,6 +146,14 @@ if __name__ == '__main__':
     r = int(rho1 * L ** 3)
     b = int(rho * L ** 3) - r
     lattice = fill_lattice(r, b, L)
+
+    
+    reds = np.sum(lattice == 1)
+    blues = np.sum(lattice == 2)
+    print("red: ", r, reds)
+    print("blu: ", b, blues)
+
+
     initial = deepcopy(lattice)
 
     datas = []; overlaps = []

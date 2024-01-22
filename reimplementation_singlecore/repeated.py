@@ -4,18 +4,16 @@ import networkx as nx
 import sys
 
 
+
 def build_lattice(L, num_red, num_blue):
     grid = np.zeros(L**3, dtype=int)
-
-    rng = np.random.default_rng()
-    red_sites = rng.choice(L**3, size=num_red, replace=False)
-    blue_sites = rng.choice(L**3, size=num_blue, replace=False)
-
-    grid[red_sites] = 1
+    open_sites = list(range(L**3))
+    red_sites = np.random.choice(open_sites, size=num_red, replace=False)
+    open_sites = [x for x in open_sites if x not in red_sites]
+    blue_sites = np.random.choice(open_sites, size=num_blue, replace=False)
+    open_sites = [x for x in open_sites if x not in blue_sites] 
+    grid[red_sites] = 1 
     grid[blue_sites] = 2
-    for _ in range(10):
-        np.random.shuffle(grid)
-
     return grid
 
 def get_neighbors(i, j, k, N):
@@ -36,7 +34,6 @@ def get_neighbors(i, j, k, N):
     l = kprev + N * (j + i * N)
     r = knext + N * (j + i * N)
 
-    #print(f,b,u,d,l,r)
 
     for i, n1 in enumerate([f, b, u, d, l, r]):
         for j, n2 in enumerate([f, b, u, d, l, r]): 
@@ -179,7 +176,7 @@ def compare_energies(L, grid, nns, beta):
 
 
 def main():
-    L = 12
+    L = 20
     rho = 0.75
     rho1 = 0.6 * rho
     beta = 5.
@@ -192,6 +189,11 @@ def main():
 
     grid = build_lattice(L, r, b)
     nns  = get_nn_list(L)
+
+    blues = np.sum(grid == 2) 
+    reds  = np.sum(grid == 1)
+    print("blues", blues, b)
+    print("reds", reds, r)
 
 
 
