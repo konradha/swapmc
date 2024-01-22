@@ -76,12 +76,15 @@ def main():
     L = 12
     rho = 0.75
     rho1 = 0.6 * rho
+    beta = 5.
     N = int(np.round(L**3 * rho)) 
     r = int(np.round(L**3 * rho1))
     b = N - r
     grid = build_lattice(L, r, b)
     nns  = get_nn_list(L)
     des = []
+    accept = []
+    reject = []
     for i in range(L):
         for j in range(L):
             for k in range(L):
@@ -90,6 +93,11 @@ def main():
                 for n in nns[site]:
                     if grid[n] != 0: continue # only move to empty slots
                     de = dE(grid, site, n, nns)
+                    if np.random.random() < np.exp( -beta * de):
+                        accept.append((site, n))
+                    else:
+                        reject.append((site, n))
+
                     des.append(de)
     
     u, c = np.unique(des, return_counts=1)
@@ -98,6 +106,36 @@ def main():
     plt.bar(u, c / L ** 3)
     plt.yscale("log")
     plt.show()
+
+    plt.clf()
+
+    dA = []
+    for s, m in accept:
+        dA.append(abs(s-m))
+    dA = np.array(dA)
+    dR = []
+    for s, m in reject:
+        dR.append(abs(s-m))
+    dR = np.array(dR)
+    ua, ca = np.unique(dA, return_counts=True)
+    ur, cr = np.unique(dR, return_counts=True)
+
+    plt.bar(ua-5., ca, width=10., color='red', label="accepted distances")
+    plt.bar(ur+5., cr, width=10., color='blue', label="rejected distances")
+
+    plt.xticks(ur)
+    plt.title("investigating correlation in neighbor moves")
+
+    plt.yscale("log")
+    plt.legend()
+    plt.show()
+
+
+
+
+
+
+    
 
 
 
