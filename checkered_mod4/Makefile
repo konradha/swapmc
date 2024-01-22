@@ -7,8 +7,15 @@ RUN_SCRIPT = runfile.sh
 SRC_SLICE = sliced_sweep.cpp 
 TARGET_SLICE = checkerboard_sliced
 
+LATTICE = lattice.h
+SRC_TESTER = tester.cpp
+TARGET_TESTER = tester
+
 $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) 
+
+test: $(SRC_TESTER) #$(LATTICE)
+	$(CC) $(CFLAGS) $(SRC_TESTER) -I $(LATTICE) -o $(TARGET_TESTER)
 
 run: $(TARGET)
 	bash ${RUN_SCRIPT}

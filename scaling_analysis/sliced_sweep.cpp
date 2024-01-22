@@ -253,6 +253,34 @@ void slice_sweep(short *__restrict lattice, const int N, const int &i,
   }
 }
 
+
+void slice_sweep_randomized(short *__restrict lattice, const int N, const int &i,
+                std::vector<std::mt19937> &gens,
+                 std::vector<std::uniform_int_distribution<>> &nn_dis,
+                 std::vector<std::uniform_real_distribution<>> &unis,
+                 const float beta)
+{
+    // TODO
+}
+
+void slice_sweep_checkerboard(short *__restrict lattice, const int N, const int &i,
+                std::vector<std::mt19937> &gens,
+                 std::vector<std::uniform_int_distribution<>> &nn_dis,
+                 std::vector<std::uniform_real_distribution<>> &unis,
+                 const float beta)
+{
+    // TODO
+}
+
+void slice_sweep_checkerboard_randomized(short *__restrict lattice, const int N, const int &i,
+                std::vector<std::mt19937> &gens,
+                 std::vector<std::uniform_int_distribution<>> &nn_dis,
+                 std::vector<std::uniform_real_distribution<>> &unis,
+                 const float beta)
+{
+    // TODO
+}
+
 void sweep(short *__restrict lattice, const int N,
            std::vector<std::mt19937> &gens,
            std::vector<std::uniform_int_distribution<>> &nn_dis,

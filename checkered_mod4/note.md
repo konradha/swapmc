@@ -14,3 +14,8 @@
   advantages when using the non-local swaps
 
 - TODO: compare with sliced sweep
+
+
+
+-- TODO: nn-uni choice seems to be correct; dE distributions seem off (see comparison with port to python)
+-- something's maybe gone wrong when doing the translation of indices ...

@@ -35,44 +35,60 @@ int main(int argc, char **argv)
     for (int i=0;i<N*N*N;++i)t[i]=-1;
 
     int i,j,k;
-#pragma omp parallel for private(i,j,k) schedule(static)
-    for(i=0;i<N;i+=1)
-        for(j=0;j<N;j+=1)
-            for(k=0;k<N;k+=1)
+
+    int blocksize = 3;
+#pragma omp parallel for collapse(3) schedule(static)
+    for(int i=2;i<N-2;i+=blocksize)
+        for(int j=0;j<N;j+=blocksize)
+            for(int k=0;k<N;k+=blocksize)
             {
-                if ((i+j+k) % omp_get_num_threads() == omp_get_thread_num())
-                {
-                auto tup = std::make_tuple((i>0? i-1:(i+1)%N),(j>0?j-1:(j+1)%N),(k>0?k-1:(k+1)%N));
-                
-                int idx = convert(tup, N); 
-                //int left, right, up, down, front, back;
-                //left = (i-1+N) % N; right = (i+1) % N;
-                //down = (j-1+N)%N; up = (j+1)%N;
-                //back = (k-1+N)%N; front = (k+1)%N;
-
-                int x,y,z; x=i;y=j;z=k;
-                std::array<std::tuple<int, int, int>, 6> my_neighbors;
-                if (t[idx + omp_get_thread_num()] != -1) continue; 
-                // left (with PBC, inner), then right (with PBC, inner)
-                if (x == 0)   my_neighbors[0]  = {N-1, y, z};
-                if (x > 0)    my_neighbors[0]  = {x-1, y, z};
-                if (x == N-1) my_neighbors[1]  = {0, y, z};
-                if (x < N-1)  my_neighbors[1]  = {x+1, y, z};
-
-                if (y == 0)    my_neighbors[2] = {x, N-1, z};
-                if (y > 0)     my_neighbors[2] = {x, y-1, z};
-                if (y == N-1)  my_neighbors[3] = {x, 0, z};
-                if (y < N-1)   my_neighbors[3] = {x, y+1, z};
-
-                if (z == 0)   my_neighbors[4]  = {x, y, N-1};
-                if (z > 0)    my_neighbors[4]  = {x, y, z-1};
-                if (z < N-1)  my_neighbors[5]  = {x, y, z+1};
-                if (z == N-1) my_neighbors[5]  = {x, y, 0};
-#pragma unroll(6)
-                for(int jj=0;jj<6;++jj) t[convert(my_neighbors[jj])] = omp_get_thread_num(); 
-                t[idx] = omp_get_thread_num();
-                }
+                for(int lx=-1;lx<2;++lx)
+                    for(int ly=-1;ly<2;++ly)
+                        for(int lz=-1;lz<2;++lz)
+                        {
+                            if (i + lx == -1 && j + ly >= 0 && k + lz >= 0) t[convert(std::make_tuple(N-1,j+ly,k+lz))] = omp_get_thread_num();
+                            else if (i+lx>0 && j+ly>0 && k+lz>0) t[convert(std::make_tuple(i+lx,j+ly,k+lz))] = omp_get_thread_num(); 
+                        }
             }
+
+
+//#pragma omp parallel for schedule(static)
+//    for(int tr = 0; tr < omp_get_num_threads(); ++tr)
+//    for(i=0;i<N;i+=1)
+//        for(j=0;j<N;j+=1)
+//            for(k=0;k<N;k+=1)
+//            {
+//                auto tup = std::make_tuple((i>0? i-1:(i+1)%N),(j>0?j-1:(j+1)%N),(k>0?k-1:(k+1)%N));
+//                
+//                int idx = convert(tup, N); 
+//                //int left, right, up, down, front, back;
+//                //left = (i-1+N) % N; right = (i+1) % N;
+//                //down = (j-1+N)%N; up = (j+1)%N;
+//                //back = (k-1+N)%N; front = (k+1)%N;
+//
+//                int x,y,z; x=i;y=j;z=k;
+//                std::array<std::tuple<int, int, int>, 6> my_neighbors;
+//                if (t[idx + omp_get_thread_num()] != -1) continue; 
+//                // left (with PBC, inner), then right (with PBC, inner)
+//                if (x == 0)   my_neighbors[0]  = {N-1, y, z};
+//                if (x > 0)    my_neighbors[0]  = {x-1, y, z};
+//                if (x == N-1) my_neighbors[1]  = {0, y, z};
+//                if (x < N-1)  my_neighbors[1]  = {x+1, y, z};
+//
+//                if (y == 0)    my_neighbors[2] = {x, N-1, z};
+//                if (y > 0)     my_neighbors[2] = {x, y-1, z};
+//                if (y == N-1)  my_neighbors[3] = {x, 0, z};
+//                if (y < N-1)   my_neighbors[3] = {x, y+1, z};
+//
+//                if (z == 0)   my_neighbors[4]  = {x, y, N-1};
+//                if (z > 0)    my_neighbors[4]  = {x, y, z-1};
+//                if (z < N-1)  my_neighbors[5]  = {x, y, z+1};
+//                if (z == N-1) my_neighbors[5]  = {x, y, 0};
+//#pragma unroll(6)
+//                for(int jj=0;jj<6;++jj) t[convert(my_neighbors[jj])] = omp_get_thread_num(); 
+//                t[idx] = omp_get_thread_num();
+//
+//            }
 
     //for (int i=N * (10 + N);i< N * (20 + 2*N);++i) std::cout << t[i] << " ";
     std::cout << "FIRST\n"; 

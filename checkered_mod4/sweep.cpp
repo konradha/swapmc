@@ -350,7 +350,7 @@ int main(int argc, char **argv) {
   for (int i = 0; i < N * N * N; ++i)
     lattice_back[i] = lattice[i];
 
-  const int nsweeps = (1 << 10) + 1;
+  const int nsweeps = (1 << 14) + 1;
   std::vector<std::tuple<int, int, int>> data;
 
   data.push_back({0, logand(lattice_back, lattice, N), 0});

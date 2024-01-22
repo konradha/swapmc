@@ -113,3 +113,15 @@ end while
 - particle types constant ?
 - cluster updates (swendsen wang?) (how applicable here?)
 - more from jap paper
+
+
+## comments 23.12.
+- parallelization now worked out correctly
+- when using the "jump-empty"-trick, we get the plateau between 10^1 and 10^3
+- when not using that trick, we get inverse behavior of the autocorrelations
+- autocorrelation function is still off (by a scaling factor?)
+- some parametrized normalization and we would essentially get the same graph as seen in PRL
+- TODO: bug fixes, cleanup, read into statistical tricks, how do we approach parallel tempering here?
+- read on overlap parameters that we can use to fully exploit massive parallelism we get by using MPI ranks
+- TODO: write up on what has been done until now.
+- Q: what data to use for RSMI -- logits?

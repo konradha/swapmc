@@ -45,11 +45,10 @@ def fill_lattice(num_red, num_blue, N):
 def local_energy(grid, i, j, k, nn_list):
     L = grid.shape[0]
     site_ty = grid[i, j, k]
+    if site_ty == 0: return 1<<10
     conn = 3. if site_ty == 1 else 5.
     nn = nn_list[k + L * (j + i * L)]
-    curr = 0.
-    for n in nn:
-        curr += grid[n]
+    curr = np.sum(np.array([grid[nn[0]], grid[nn[1]], grid[nn[2]], grid[nn[3]], grid[nn[4]], grid[nn[5]]])) 
     curr = curr - conn
     return curr * curr
 
@@ -74,9 +73,10 @@ def step(grid, i, j, k, beta, nn, nn_list):
     E1 = local_energy(grid, i, j, k, nn_list)
     swap(grid, i, j, k, nn_i, nn_j, nn_k)
     E2 = local_energy(grid, i, j, k, nn_list)
-    dE = np.abs(E1 - E2)
+    dE = abs(E2 - E1)
     #if np.random.random() < np.exp(-beta * dE):
     if rng.random() < np.exp(-beta * dE):
+        if dE == 0: print(beta, i, j, k, rng.random(), E1, E2, nn_ty, site_ty)
         return
     swap(grid, i, j, k, nn_i, nn_j, nn_k)
 
@@ -90,14 +90,19 @@ def distribute_sweep(grid, offset, beta, nn):
     L = grid.shape[0]
     for ii in range((L - offset + 2) // 3):
         i = offset + ii * 3
-        inner_sweep(grid, i, beta, nn)
+        indices_j = np.random.choice(L, L)
+        indices_k = np.random.choice(L, L)
+        inner_sweep(grid, i, beta, nn, indices_j, indices_k)
 
 
-def inner_sweep(grid, i, beta, nn):
+def inner_sweep(grid, i, beta, nn, indices_j, indices_k):
     L = grid.shape[0]
-    for j in range(L):
-        for k in range(L):
+    for j in indices_j:
+        for k in indices_k:
             step(grid, i, j, k, beta, nn[k + L * (j + i * L)], nn)
+    #for j in range(L):
+    #    for k in range(L):
+    #        step(grid, i, j, k, beta, nn[k + L * (j + i * L)], nn)
 
 
 def get_overlap(lattice1, lattice2):
@@ -126,14 +131,14 @@ if __name__ == '__main__':
     L = int(sys.argv[1])
     nn = build_nn(L)
 
-    betas = [.2, 5.6, 1000.]
+    betas = [.5, 2.9, 5.6]
     r = int(rho1 * L ** 3)
     b = int(rho * L ** 3) - r
     lattice = fill_lattice(r, b, L)
     initial = deepcopy(lattice)
 
     datas = []; overlaps = []
-    nsweeps = 1 << 5
+    nsweeps = 1 << 8
 
     curr = 1
     for i, beta in tqdm(enumerate(betas)):
@@ -141,14 +146,6 @@ if __name__ == '__main__':
         over = [[0, int(rho * L*L*L)]]
         for i in tqdm(range(nsweeps + 1)):
             sweep(lattice, beta, nn)
-            #print(i,curr)
-            #print(f"{i%curr=}")
-            #print(f"{i//curr=}")
-            #if i % curr == 0:
-            #    data.append([curr, q(get_overlap(lattice, initial), L)])
-
-            #if i // curr == 10:
-            #    curr = curr * 10
             if i % curr == 0:
                 data.append([curr, q(get_overlap(lattice, initial), L)])
                 over.append([curr, get_overlap(lattice, initial)])

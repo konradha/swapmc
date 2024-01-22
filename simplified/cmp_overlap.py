@@ -17,8 +17,14 @@ def fun(x):
     #c0 = rho * (rho1**2 + rho2**2)
     c0 = rho**2 * (rho1 + rho2)
     N = rho * 20 **3
-    
     return (1./N * x - c0) / (1. -c0)
+
+    #phi = rho
+    #q0 = phi * (rho1**2 + rho2**2)    
+    #N = 3556 + 2370 # == rho * L**3
+    #return (1./(1.-q0))* ( 1./N * x - q0)
+    
+    
 
 fig, axs = plt.subplots(2)
 

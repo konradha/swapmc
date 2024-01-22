@@ -28,8 +28,8 @@ def benchmark_runtimes(sliced, beta, Ls, ts, swap_enabled=0):
     return runtimes
 
 if __name__ == '__main__':
-    beta = 0.
-    Ls = [12, 16, 20]#, 24]
+    beta = 5.
+    Ls = [8, 12, 16, 20]
     ts = np.array([range(2, 9)], dtype=int).reshape(-1)
  
     num_colors = 7
@@ -48,6 +48,6 @@ if __name__ == '__main__':
     plt.xticks(Ls)
     plt.xlabel("system size L / [1]")
     plt.ylabel("time / [ms]")
-    plt.title(f"1025 sweeps, beta={beta}, checkerboard sweep, dashed line sliced checkerboard sweeps")
+    plt.title(f"16385 sweeps, beta={beta}, checkerboard sweep, dashed line sliced checkerboard sweeps")
     plt.legend()
     plt.show()

@@ -6,6 +6,7 @@
 
 // to benchmark
 // export OMP_PLACES=threads; clang++-17 -pg -pedantic -ffast-math -march=native
+
 // -O3 -Wall -fopenmp -Wunknown-pragmas -fsanitize=address -lm -lstdc++
 // -std=c++20 simple_mc.cpp -o to_simple; time ./to_simple
 
@@ -49,9 +50,12 @@ int logand(const int *__restrict lattice1, const int *__restrict lattice2,
   for (int i = 0; i < N; ++i)
     for (int j = 0; j < N; ++j)
       for (int k = 0; k < N; ++k)
+      {
+        auto idx = k + N * (j + i * N);
         log +=
-            (lattice1[k + N * (j + i * N)] == lattice2[k + N * (j + i * N)]) &&
-            lattice2[k + N * (j + i * N)];
+            (lattice1[idx] == lattice2[idx]) &&
+            lattice2[idx];
+      }
   return log;
 }
 
@@ -122,6 +126,7 @@ static inline float local_energy(int *__restrict grid, const int &N,
   float connection = grid[site] == 1 ? 3. : 5.;
   float current = 0.;
   int l, r, u, d, f, b; // left, right, up, down, front, back
+  l=r=u=d=f=b=0;
   if (i == 0) {
     u = k + N * (j + (N - 1) * N);
   }
@@ -159,7 +164,7 @@ static inline float local_energy(int *__restrict grid, const int &N,
     b = k + 1 + N * (j + i * N);
   }
 
-#pragma unroll(6)
+#pragma omp simd
   for (const auto &nn : {u, d, l, r, f, b}) {
     if (!grid[nn]) // no contributions from empty sites
       continue;
@@ -246,8 +251,10 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
                  k++) {
               const auto site = k + N * (j + i * N);
 
+              // necessary for the local move dynamics
               if (lattice[site] == 0)
                 continue;
+
               int l, r, u, d, f, b; // left, right, up, down, front, back
               l = r = u = d = f = b = 0;
               if (i == 0) {
@@ -292,6 +299,7 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
 
               if (lattice[mv] == lattice[site])
                 continue; // same particle type will not change energy
+                          // optimization that should not induce bias
 
               float E1 = local_energy(lattice, N, i, j, k);
               // auto [mi, mj, mk] = revert(mv, N);
@@ -304,7 +312,7 @@ void sweep(int *__restrict lattice, const int N, const float beta = 1.) {
               if (uni(gen) <= std::exp(-beta * dE)) {
                 continue; // success, accept new state
               }
-              exchange(lattice, N, site, mv);
+              exchange(lattice, N, site, mv); // change back what was swapped
             }
           }
         }
@@ -450,7 +458,7 @@ int main(int argc, char **argv) {
     // auto e = sweep_loop(lattice, N, beta, 10000, t0, tf);
 
     nsteps = 10000;
-    ntries = 7;
+    ntries = 6;
     int *lattice_back = nullptr;
     const unsigned int align = 64;
     auto padded_N = (N * N * N + (align - 1)) & ~(align - 1);
@@ -462,15 +470,41 @@ int main(int argc, char **argv) {
       for (int j = 0; j < N; ++j)
         for (int k = 0; k < N; ++k)
           lattice_back[k + N * (j + i * N)] = lattice[k + N * (j + i * N)];
+    
+    // warmup
+    for(int i=0;i<1000;++i)        
+      sweep(lattice, N, beta);
 
-    for (int i = 0; i < ntries; ++i) {
-      std::cout << i << "," << logand(lattice_back, lattice, N) << ","
-                << tf - t0 << "\n";
-      tf = t0 = 0.;
-      sweep_loop_simple(lattice, N, beta, std::pow(10, i), t0, tf);
-      // std::cout << e << "\n";
-      // dump_lattice(lattice, N);
+    int nsweeps = 1000000;
+    t0 = MPI_Wtime();
+    tf = 0; 
+    
+    
+    std::cout << 0 <<","<< logand(lattice_back, lattice, N) << "\n";
+
+    int curr = 1;
+    for(int i=0;i<nsweeps;++i)
+    {        
+      sweep(lattice, N, beta);
+      //tf += MPI_Wtime();
+      if (i % curr == 0)
+      {
+        std::cout << i <<","<< logand(lattice_back, lattice, N) << "\n";
+        curr *= 10;
+      }
     }
+    std::cout << nsweeps <<","<< logand(lattice_back, lattice, N) << "\n";
+    
+
+    //for (int i = 0; i < ntries; ++i) {
+    //  std::cout << i << "," << logand(lattice_back, lattice, N) << ","
+    //            << tf - t0 << "\n";
+    //  tf = t0 = 0.;
+    //  sweep_loop_simple(lattice, N, beta, std::pow(10, i), t0, tf);
+    //  
+    //  // std::cout << e << "\n";
+    //  // dump_lattice(lattice, N);
+    //}
   }
   ////std::cout << rk << ": " << tf_comm - t0_comm  << " secs spent
   /// communicating / waiting\n"; /std::cout << rk << ": took " << tf - t0  << "

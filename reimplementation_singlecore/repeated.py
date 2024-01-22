@@ -91,7 +91,7 @@ def dE(lattice, site, mv, nn_list, kinetic=None):
     
 
 def visualize_grid(L, grid, nns):
-    if L < 5: raise Exception("Grid needs to have at least L=5 for 6-regularity to be workable")
+    if L < 6: raise Exception("Grid needs to have at least L=6 for 6-regularity to be workable")
     if L > 8: raise Exception("Grid too big to draw, choose different L") 
 
     g = nx.Graph() 

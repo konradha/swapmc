@@ -16,13 +16,16 @@ void dump_slice(const short *__restrict lattice, const int N, const int i) {
   for (int j = 0; j < N; ++j) {
     for (int k = 0; k < N; ++k)
       std::cout << lattice[k + N * (j + i * N)] << ",";
+    std::cout << "\n";
   }
 }
 
 void dump_lattice(const short *__restrict lattice, int N) {
   for (int i = 0; i < N; ++i)
+  {
     dump_slice(lattice, N, i);
-  std::cout << "\n";
+    std::cout << "\n";
+  }
 }
 
 int logand(const short *__restrict lattice1, const short *__restrict lattice2,
@@ -114,44 +117,56 @@ static inline std::tuple<int, int, int> revert(int s, int N = 30) {
 
 std::array<int, 6> get_neighbors(const int &i, const int &j, const int &k,
                                  const int &N) {
-  int l, r, u, d, f, b; // left, right, up, down, front, back
-  l = r = u = d = f = b = -1;
-  if (i == 0) {
-    u = k + N * (j + (N - 1) * N);
-  }
-  if (i == N - 1) {
-    d = k + N * j;
-  }
-  if (j == 0) {
-    l = k + N * ((N - 1) + i * N);
-  }
-  if (j == N - 1) {
-    r = k + N * (i * N);
-  }
-  if (k == 0) {
-    f = N - 1 + N * (j + i * N);
-  }
-  if (k == N - 1) {
-    b = N * (j + i * N);
-  }
-  if (i > 0) {
-    u = k + N * (j + (i - 1) * N);
-  }
-  if (i < N - 1) {
-    d = k + N * (j + (i + 1) * N);
-  }
-  if (j > 0) {
-    l = k + N * (j - 1 + i * N);
-  }
-  if (j < N - 1) {
-    r = k + N * (j + 1 + i * N);
-  }
-  if (k > 0) {
-    f = k - 1 + N * (j + i * N);
-  }
-  if (k < N - 1) {
-    b = k + 1 + N * (j + i * N);
-  }
+  // THIS right here: NOT REVERSIBLE -> we have overlapping neighbors for some sites :( bad.
+  //if (i == 0) {
+  //  u = k + N * (j + (N - 1) * N);
+  //}
+  //if (i == N - 1) {
+  //  d = k + N * j;
+  //}
+  //if (j == 0) {
+  //  l = k + N * ((N - 1) + i * N);
+  //}
+  //if (j == N - 1) {
+  //  r = k + N * (i * N);
+  //}
+  //if (k == 0) {
+  //  f = N - 1 + N * (j + i * N);
+  //}
+  //if (k == N - 1) {
+  //  b = N * (j + i * N);
+  //}
+  //if (i > 0) {
+  //  u = k + N * (j + (i - 1) * N);
+  //}
+  //if (i < N - 1) {
+  //  d = k + N * (j + (i + 1) * N);
+  //}
+  //if (j > 0) {
+  //  l = k + N * (j - 1 + i * N);
+  //}
+  //if (j < N - 1) {
+  //  r = k + N * (j + 1 + i * N);
+  //}
+  //if (k > 0) {
+  //  f = k - 1 + N * (j + i * N);
+  //}
+  //if (k < N - 1) {
+  //  b = k + 1 + N * (j + i * N);
+  //}
+  int ii, kk, jj;
+  ii = (i==0? N-1 : i-1);
+  jj = (j==0? N-1 : j-1);
+  kk = (k==0? N-1 : k-1);
+  const int f = k + N * ( j + (ii % N)* N); 
+  const int b = k + N * ( j + ((i+1) % N)* N);
+  const int u = k + N * ((jj % N) + i* N); 
+  const int d = k + N * (((j+1) % N) + i* N);
+  const int l = (kk % N) + N*(j + i *N); 
+  const int r = ((k+1) % N) + N*(j + i *N); 
+  //assert(f >= 0 && b >= 0);
+  //assert(u >= 0 && d >= 0);
+  //assert(l >= 0 && r >= 0);
   return {u, d, l, r, f, b};
 }
 
@@ -209,10 +224,12 @@ static inline void step(short *__restrict lattice, const int N, const int &i, co
     const auto t = omp_get_thread_num();
     const auto nthreads = omp_get_num_threads();
     const auto site = k + N * (j + i * N);
-    
+    if (lattice[site] == 0) return;
 
     const auto nn = ::nn[site];
-    const auto mv = nn[nn_dis[t](gens[t])];
+    const auto to_mv = nn_dis[t](gens[t]);
+
+    const auto mv = nn[to_mv];
     if (!(lattice[site] > 0 && lattice[mv] == 0)) return;
     auto [mi, mj, mk] = revert(mv, N);
 
@@ -220,19 +237,37 @@ static inline void step(short *__restrict lattice, const int N, const int &i, co
     exchange(lattice, N, site, mv);
 
     const volatile float E2 = nn_energy(lattice, N, i, j, k) + nn_energy(lattice, N, mi, mj, mk);// local_energy(lattice, N, i, j, k) + local_energy(lattice, N, mi, mj, mk);
-    const auto dE = (E2-E1+scale) / 2 / scale; 
-    //const auto dE = (E2-E1) / scale;
-    const auto w0 = 1.;
-    // Metropolis criterion
-    const auto crit = w0 * (std::exp(-beta * dE * A) < 1.? std::exp(-beta * dE * A) : 1.); 
-    // Glauber dynamics
-    //const auto crit = w0 * ( .5 * (1. - std::tanh(std::exp(-(dE) * beta))));
-
+    
+    // * this version is apparently used in the PLR paper? (works in numpy when using abs val)
+    const auto dE = (E2-E1);
+    const auto crit = (std::exp(-beta * dE) < 1.? std::exp(-beta * dE) : 1.);
 //#pragma omp critical
-//    std::cout << E1 << "," << E2 << "," << E2-E1 << "\n";
+//    if (dE <= 0)
+//      std::cout << site << "," << mv << "," << E2 - E1 << "\n";
+    
+    
+    
+    
+    
+    // THE IMPLEMENTATION WE?RE CURRENTLY WORKING WITH!
+    //const auto dE = (E2-E1+scale) / 2 / scale; 
+    ////const auto dE = (E2-E1) / scale;
+    //const auto w0 = 1.;
+    //// Metropolis criterion
+    //const auto crit = w0 * (std::exp(-beta * dE * A) < 1.? std::exp(-beta * dE * A) : 1.); 
+    //
+    //// Glauber dynamics
+    ////const auto crit = w0 * ( .5 * (1. - std::tanh(std::exp(-(dE) * beta))));
+
+    auto dist = mv - site;
+    
+//#pragma omp critical
+//    std::cout << dist << "," << E2-E1 << "," << to_mv << "\n";
 
     if (unis[t](gens[nthreads + t]) < crit) {
       // accept move
+//#pragma omp critical
+//        std::cout << site << "," << mv << "," << E2 - E1 << "\n";
       return;
     }
     else {
@@ -246,21 +281,37 @@ void slice_sweep(short *__restrict lattice, const int N, const int &i,
                  std::vector<std::uniform_int_distribution<>> &nn_dis,
                  std::vector<std::uniform_real_distribution<>> &unis,
                  const float beta) {
-//#pragma omp parallel
     {
+      // uniformly traverse slice of the lattice
       const auto stride = 4;
       for(int s = 0; s < stride; ++s)
         for(int t = 0; t < stride; ++t)
-
-//#pragma omp for collapse(2)
           for (int j = s; j < N; j+=stride) {
             for (int k = t; k < N; k+=stride) {
-//#pragma omp critical
-//                if(omp_get_thread_num() != 0)
-//                    std::cout << omp_get_thread_num() << ": " << i << "," << j << "," << k << "\n";
               step(lattice, N, i, j, k, gens, nn_dis, unis, beta);
             }
           }
+    }
+}
+
+
+void slice_sweep_randomized(short *__restrict lattice, const int N, const int &i,
+                 std::vector<std::mt19937> &gens,
+                 std::vector<std::uniform_int_distribution<>> &nn_dis,
+                 std::vector<std::uniform_real_distribution<>> &unis,
+                 std::vector<std::vector<std::tuple<int, int>>> &slice_coords,
+                 const float beta)
+{
+    const auto t = omp_get_thread_num();
+    {
+      const auto tid = omp_get_thread_num();
+      std::shuffle(slice_coords[tid].begin(), slice_coords[tid].end(), gens[tid]);
+      for(const auto & [j, k] : slice_coords[tid])
+      {
+//#pragma omp critical
+//          std::cout << t << "," << i << "," << j << "," << k << "\n";
+          step(lattice, N, i, j, k, gens, nn_dis, unis, beta); 
+      }
     }
 }
 
@@ -268,24 +319,32 @@ void sweep(short *__restrict lattice, const int N,
            std::vector<std::mt19937> &gens,
            std::vector<std::uniform_int_distribution<>> &nn_dis,
            std::vector<std::uniform_real_distribution<>> &unis,
-           const float beta) {
+           const float beta, std::vector<std::vector<std::tuple<int, int>>> &slice_coords) {
 //#pragma omp parallel
     {
       const int stride = 4;
       const int mod = N % stride;
       assert( mod == 0);
 
-      //std::vector<int> idx = {0, 1, 2, 3};
-      int ii = 0;
+      
 
+      std::vector<int> idx = {0, 1, 2, 3};
+      int ii = 0;
+#pragma omp master
+      std::shuffle(idx.begin(), idx.end(), gens[0]);
+
+#pragma omp parallel shared(idx)
       for (int s = 0; s < stride; ++s) {
-//#pragma omp barrier // everyone needs acces to same s
-        ii = s;
-#pragma omp for collapse(1)
-        for (int i = ii; i < N - mod; i += stride) {
-          slice_sweep(lattice, N, i, gens, nn_dis, unis, beta);
+#pragma omp barrier // everyone needs acces to same s
+        ii = idx[s];
+        //ii = s;
+#pragma omp for collapse(1) schedule(auto)
+        for (int i = ii; i < N; i += stride) {
+          //slice_sweep(lattice, N, i, gens, nn_dis, unis, beta);
+          slice_sweep_randomized(lattice, N, i, gens, nn_dis, unis, slice_coords, beta);
         }
       }
+      
     }
 }
 
@@ -296,7 +355,7 @@ float energy(short *__restrict lattice, const int &N) {
     for (int j = 0; j < N; ++j)
       for (int k = 0; k < N; ++k)
         e += local_energy(lattice, N, i, j, k);
-  return A * e;
+  return  e;
 }
 
 int get_num_threads(void) {
@@ -341,6 +400,16 @@ int main(int argc, char **argv) {
   else
     omp_set_num_threads(nsw);
   ::nn = get_nn_list(N);
+  //for(const auto [i, n] : ::nn)
+  //{
+  //    const auto [n1, n2, n3, n4, n5, n6] = n;
+  //    std::cout << i << ": " << n1 << "," << n2 << "," << n3 << "," << n4 << "," << n5 << "," << n6 << "\n";
+  //    for(int ii=0;ii<6;++ii)
+  //        for(int j=0;j<6;++j)
+  //            if (ii!=j && n[ii] == n[j]) std::cout << "site " << i << ", have double " << n[ii] << "\n";
+  //}
+
+  //if (beta == 5.) return 1;
 
   short *lattice = nullptr;
   short *lattice_back = nullptr;
@@ -351,7 +420,7 @@ int main(int argc, char **argv) {
     return 1;
 
   build_lattice(lattice, N, r, b);
-
+  
   if (posix_memalign((void **)&lattice_back, align, padded_N * sizeof(short)) !=
       0)
     return 1;
@@ -372,10 +441,13 @@ int main(int argc, char **argv) {
 
 #pragma omp parallel
   {
-    int tid = omp_get_thread_num();
-    thread_generators[tid].seed(std::random_device()() + tid);
-    thread_generators[omp_get_num_threads() + tid].seed(std::random_device()() +
-                                                        100 * tid);
+    const auto tid = omp_get_thread_num();
+#pragma omp critical
+      { 
+        thread_generators[tid].seed(std::random_device()() + tid);
+        thread_generators[omp_get_num_threads() + tid].seed(std::random_device()() +
+                                                            100 * tid);
+      }
   }
 
   std::vector<std::uniform_int_distribution<>> nn_dis(nthreads);
@@ -384,7 +456,7 @@ int main(int argc, char **argv) {
 #pragma omp parallel
   {
     // every thread allocates its own RNG
-    int tid = omp_get_thread_num();
+    const auto tid = omp_get_thread_num();
     if (tid == 0)
       for (int t = 0; t < omp_get_num_threads(); ++t) {
         nn_dis[t] = std::uniform_int_distribution<>(0, 5);
@@ -392,33 +464,45 @@ int main(int argc, char **argv) {
       }
   }
 
+  std::vector<std::vector<std::tuple<int, int>>> slice_coords(nthreads);
+#pragma omp parallel
+  {
+      const auto tid = omp_get_thread_num();
+      for(int j=0;j<L;++j)
+          for(int k=0;k<L;++k)
+#pragma omp critical
+              slice_coords[tid].emplace_back(j, k); 
+
+    std::shuffle(slice_coords[tid].begin(), slice_coords[tid].end(), thread_generators[tid]); 
+    std::sort(slice_coords[tid].begin(), slice_coords[tid].end());
+  }
+
   std::random_device rd;
   std::mt19937 gen(rd());
   std::uniform_real_distribution<> uni(0., 1.);
   assert (L % 4 == 0 && "L must be a factor of 4!");
   for (int i = 1; i <= nsweeps; ++i) {
-#pragma omp parallel
-    sweep(lattice, N, thread_generators, nn_dis, unis, beta);
-    if (swap) {
-#pragma omp master
-      {
-        auto red = sample(lattice, N * N * N, r, 1);
-        auto blue = sample(lattice, N * N * N, b, 2);
-
-        auto [ii, j, k] = revert(red, N);
-        auto [x, y, z] = revert(blue, N);
-
-        float E1 = nn_energy(lattice, N, ii, j, k) +
-                   nn_energy(lattice, N, x, y, z);
-        exchange(lattice, N, red, blue);
-        float E2 = nn_energy(lattice, N, ii, j, k) +
-                   nn_energy(lattice, N, x, y, z);
-        auto dE = std::abs(E2 - E1);
-        if (uni(gen) >= std::exp(-beta * dE)) {
-          exchange(lattice, N, red, blue);
-        }
-      }
-    }
+    sweep(lattice, N, thread_generators, nn_dis, unis, beta, slice_coords);
+//    if (swap) {
+//#pragma omp master
+//      {
+//        auto red = sample(lattice, N * N * N, r, 1);
+//        auto blue = sample(lattice, N * N * N, b, 2);
+//
+//        auto [ii, j, k] = revert(red, N);
+//        auto [x, y, z] = revert(blue, N);
+//
+//        float E1 = nn_energy(lattice, N, ii, j, k) +
+//                   nn_energy(lattice, N, x, y, z);
+//        exchange(lattice, N, red, blue);
+//        float E2 = nn_energy(lattice, N, ii, j, k) +
+//                   nn_energy(lattice, N, x, y, z);
+//        auto dE = std::abs(E2 - E1);
+//        if (uni(gen) >= std::exp(-beta * dE)) {
+//          exchange(lattice, N, red, blue);
+//        }
+//      }
+//    }
 
     if (i == curr) {
       const auto anded = logand(lattice, lattice_back, N);
