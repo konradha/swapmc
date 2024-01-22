@@ -73,13 +73,14 @@ def dE(lattice, site, mv, nn_list):
 
 
 def main():
-    L = 12
+    L = 20
     rho = 0.75
     rho1 = 0.6 * rho
     beta = 5.
     N = int(np.round(L**3 * rho)) 
     r = int(np.round(L**3 * rho1))
     b = N - r
+    print(N, r, b)
     grid = build_lattice(L, r, b)
     nns  = get_nn_list(L)
     des = []
@@ -103,7 +104,7 @@ def main():
     u, c = np.unique(des, return_counts=1)
     mask = u <= 0
     print("immediate accepts", np.sum(c[mask]) / np.sum(c))
-    plt.bar(u, c / L ** 3)
+    plt.bar(u, c)
     plt.yscale("log")
     plt.show()
 
@@ -120,21 +121,23 @@ def main():
     ua, ca = np.unique(dA, return_counts=True)
     ur, cr = np.unique(dR, return_counts=True)
 
-    plt.bar(ua-5., ca, width=10., color='red', label="accepted distances")
-    plt.bar(ur+5., cr, width=10., color='blue', label="rejected distances")
+    u = np.linspace(0,5,6)
+    #plt.bar(ua-5., ca, width=10., color='red', label="accepted distances")
+    #plt.bar(ur+5., cr, width=10., color='blue', label="rejected distances")
+    #plt.xticks(ur)
 
-    plt.xticks(ur)
-    plt.title("investigating correlation in neighbor moves")
+    plt.bar(u-.15, ca, width=.24, color='red', label="accepted distances")
+    plt.bar(u+.15, cr, width=.24, color='blue', label="rejected distances")
+    plt.xticks(u)
+
+    #### THERE SEEMS TO BE BIAS: positive-direction neighbor moves are happening much more often ?!
+
+    
+    plt.title("investigating if bias exists in neighbor moves")
 
     plt.yscale("log")
     plt.legend()
     plt.show()
-
-
-
-
-
-
     
 
 
