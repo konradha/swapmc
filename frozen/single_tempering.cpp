@@ -298,9 +298,9 @@ void try_exchange(short *lattice, const int &L, short *copies,
   float rank_energy, partner_energy;
   rank_energy = energy(lattice, L);
 
-  float min_beta = 1.;
+  float min_beta = .1;
   float max_beta = 4.;
-  float d_beta = (max_beta - min_beta) / sz;
+  float d_beta = (max_beta - min_beta) / (sz - 1);
 
   int exchange_flag = -1;
   if (flag) {
@@ -486,11 +486,11 @@ int main(int argc, char **argv) {
     copies = (short *)malloc(sizeof(short) * L * L * L * sz);
   }
 
-  const int nsweeps = (1 << 15) + 1;
+  const int nsweeps = (1 << 12) + 1;
 
-  const auto beta_min = 1.;
+  const auto beta_min = .1;
   const auto beta_max = 4.;
-  const auto db = (beta_max - beta_min) / sz;
+  const auto db = (beta_max - beta_min) / (sz - 1);
   const float rank_beta = beta_min + rk * db;
 
   int curr = 1;
@@ -515,8 +515,8 @@ int main(int argc, char **argv) {
       exchange(lattice, N, red, blue);
       float E2 =
           nn_energy(lattice, N, ii, j, k) + nn_energy(lattice, N, x, y, z);
-      auto dE = std::abs(E2 - E1);
-      if (uni(gen) >= std::exp(-rank_beta * dE)) {
+      auto dE = E2 - E1;
+      if (uni(gen) < std::exp(-rank_beta * dE)) {
         exchange(lattice, N, red, blue);
       }
     }
