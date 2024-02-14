@@ -174,7 +174,6 @@ static inline const float nn_energy(short *__restrict lattice, const int N,
   return res;
 }
 
-
 // we allow: swaps and moves to empty slots
 static inline void step(short *__restrict lattice, const int N, const int &i,
                         const int &j, const int &k,
@@ -274,19 +273,18 @@ int get_num_threads(void) {
   return num_threads;
 }
 
-void dump_copies(short * copies, const int & L)
-{
+void dump_copies(short *copies, const int &L) {
   int rk, sz;
   MPI_Comm_rank(MPI_COMM_WORLD, &rk);
   MPI_Comm_size(MPI_COMM_WORLD, &sz);
 
-  if (rk != 0) return;
+  if (rk != 0)
+    return;
 
-  for(int i=0;i<sz;++i)
-  {
-      for(int d=0;d<L*L*L;++d)
-          std::cout << copies[i*L*L*L + d] << " ";
-      std::cout << "\n";
+  for (int i = 0; i < sz; ++i) {
+    for (int d = 0; d < L * L * L; ++d)
+      std::cout << copies[i * L * L * L + d] << " ";
+    std::cout << "\n";
   }
 }
 
@@ -315,11 +313,9 @@ void try_exchange(short *lattice, const int &L, short *copies,
       MPI_Recv(&partner_energy, 1, MPI_INT, partner, 0, MPI_COMM_WORLD,
                MPI_STATUS_IGNORE);
 
-      const float dE = std::exp(
-              (-bj * rank_energy - bi * partner_energy) / (-bi * rank_energy - bj * partner_energy)
-              );
+      const float dE = std::exp((-bj * rank_energy - bi * partner_energy) /
+                                (-bi * rank_energy - bj * partner_energy));
 
-      
       exchange_flag = (int)(dE > std::rand() / (float)(RAND_MAX));
 
       MPI_Send(&exchange_flag, 1, MPI_INT, partner, 0, MPI_COMM_WORLD);
@@ -329,8 +325,8 @@ void try_exchange(short *lattice, const int &L, short *copies,
                              MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       }
       // exchange debugging statement
-      //std::cout << rk << " <-> " << partner << "\n";
-      //if( exchange_flag && rk == 0) std::cout << "rank 0 exchanged\n";
+      // std::cout << rk << " <-> " << partner << "\n";
+      // if( exchange_flag && rk == 0) std::cout << "rank 0 exchanged\n";
     } else {
       partner = rk - 1;
       MPI_Send(&rank_energy, 1, MPI_INT, partner, 0, MPI_COMM_WORLD);
@@ -345,7 +341,6 @@ void try_exchange(short *lattice, const int &L, short *copies,
     }
   }
 
-  
   else {
     int partner = -1;
     if (rk == 0 || rk == sz - 1)
@@ -358,10 +353,9 @@ void try_exchange(short *lattice, const int &L, short *copies,
       const float bj = min_beta + partner * d_beta;
       MPI_Recv(&partner_energy, 1, MPI_INT, partner, 0, MPI_COMM_WORLD,
                MPI_STATUS_IGNORE);
-      const float dE = std::exp(
-              (-bj * rank_energy - bi * partner_energy) / (-bi * rank_energy - bj * partner_energy)
-              );
-    
+      const float dE = std::exp((-bj * rank_energy - bi * partner_energy) /
+                                (-bi * rank_energy - bj * partner_energy));
+
       exchange_flag = (int)(dE > std::rand() / (float)(RAND_MAX));
 
       MPI_Send(&exchange_flag, 1, MPI_INT, partner, 0, MPI_COMM_WORLD);
@@ -371,7 +365,7 @@ void try_exchange(short *lattice, const int &L, short *copies,
                              MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       }
       // exchange debugging statement
-      //std::cout << rk << " <-> " << partner << "\n";
+      // std::cout << rk << " <-> " << partner << "\n";
     } else {
       partner = rk - 1;
       MPI_Send(&rank_energy, 1, MPI_INT, partner, 0, MPI_COMM_WORLD);
@@ -527,23 +521,21 @@ int main(int argc, char **argv) {
       }
     }
 
-    if (i == curr && sz > 1) { 
+    if (i == curr && sz > 1) {
       // get all configurations into `copies`
       MPI_Gather(lattice, L * L * L, MPI_SHORT, copies, L * L * L, MPI_SHORT, 0,
                  MPI_COMM_WORLD);
-      //if (rk == 0) dump_copies(copies, L);
-      //if (rk == 0) std::cout << "sweep " << i << "\n";
+      // if (rk == 0) dump_copies(copies, L);
+      // if (rk == 0) std::cout << "sweep " << i << "\n";
 
-      if (rk == 0)
-      {
-          std::cout << i << ",";
-          for(int i=0;i<sz;++i)
-          {
-              if(i<sz-1)
-                std::cout << energy(copies + i * L * L *L, L) << ",";
-              else
-                std::cout << energy(copies + i * L * L *L, L) << "\n";
-          }
+      if (rk == 0) {
+        std::cout << i << ",";
+        for (int i = 0; i < sz; ++i) {
+          if (i < sz - 1)
+            std::cout << energy(copies + i * L * L * L, L) << ",";
+          else
+            std::cout << energy(copies + i * L * L * L, L) << "\n";
+        }
       }
       // decide on a common strategy to attempt replica exchanges across
       // neighboring temperatures
