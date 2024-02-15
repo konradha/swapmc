@@ -317,11 +317,16 @@ int main(int argc, char **argv) {
   ::nn = get_nn_list(L);
 
   short *lattice = nullptr;
+  short *lattice_back = nullptr;
   const unsigned int align = 64;
   const auto padded_N = (L * L * L + (align - 1)) & ~(align - 1);
 
   if (posix_memalign((void **)&lattice, align, padded_N * sizeof(short)) != 0)
     return 1;
+
+  if (posix_memalign((void **)&lattice_back, align, padded_N * sizeof(short)) != 0)
+    return 1;
+
 
 
   // read lattice from single line from file
@@ -334,6 +339,10 @@ int main(int argc, char **argv) {
   
   while(ss >> i)
     lattice[pos++] = i;
+
+  for(int i=0;i<L*L*L;++i) lattice_back[i] = lattice[i];
+
+
 
   const int nthreads = get_num_threads();
   std::vector<std::mt19937> thread_generators(2 * nthreads);
@@ -392,7 +401,7 @@ int main(int argc, char **argv) {
     sweep(lattice, N, thread_generators, nn_dis, unis, beta, slice_coords);
     if (i == curr)
     {
-      std::cout << i << "\n";
+      std::cout << i << "," << logand(lattice, lattice_back, L) <<  "\n";
       curr *= 2;
     }
 #pragma omp master
