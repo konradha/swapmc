@@ -486,7 +486,7 @@ int main(int argc, char **argv) {
     copies = (short *)malloc(sizeof(short) * L * L * L * sz);
   }
 
-  const int nsweeps = (1 << 12) + 1;
+  const int nsweeps = (1 << 20) + 1;
 
   const auto beta_min = .1;
   const auto beta_max = 4.;
@@ -525,18 +525,18 @@ int main(int argc, char **argv) {
       // get all configurations into `copies`
       MPI_Gather(lattice, L * L * L, MPI_SHORT, copies, L * L * L, MPI_SHORT, 0,
                  MPI_COMM_WORLD);
-      // if (rk == 0) dump_copies(copies, L);
+      if (rk == 0) dump_copies(copies, L);
       // if (rk == 0) std::cout << "sweep " << i << "\n";
 
-      if (rk == 0) {
-        std::cout << i << ",";
-        for (int i = 0; i < sz; ++i) {
-          if (i < sz - 1)
-            std::cout << energy(copies + i * L * L * L, L) << ",";
-          else
-            std::cout << energy(copies + i * L * L * L, L) << "\n";
-        }
-      }
+      //if (rk == 0) {
+      //  std::cout << i << ",";
+      //  for (int i = 0; i < sz; ++i) {
+      //    if (i < sz - 1)
+      //      std::cout << energy(copies + i * L * L * L, L) << ",";
+      //    else
+      //      std::cout << energy(copies + i * L * L * L, L) << "\n";
+      //  }
+      //}
       // decide on a common strategy to attempt replica exchanges across
       // neighboring temperatures
       int flag = std::rand() & 1;
