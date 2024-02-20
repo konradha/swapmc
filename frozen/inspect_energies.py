@@ -54,7 +54,7 @@ def logand(lattice1, lattice2):
 
 
 
-for i, b in enumerate(betas):
+for i, b in enumerate(betas[2:7]):
     energies = []
     for epoch in range(nepochs): 
         e = energy(data[epoch * len(betas) + i]) 
@@ -67,15 +67,18 @@ plt.show()
 
 
 # 8 ~ 10 as done in the paper
-w = 3
-for i, b in enumerate(betas):
-    q = []
-    starting_lattice = data[i]
-    for next_epoch in range(w, nepochs):
-        next_lattice = data[next_epoch * len(betas) + i]
-        q.append(logand(starting_lattice, next_lattice))
-        starting_lattice = data[(next_epoch - w) * len(betas) + i] 
-    plt.plot([2 ** j for j in range(w, nepochs)], q, label=f"beta={b:.2f}")
+
+ws = [3, 7, 12]
+colors = ["black", "grey", "red"]
+for wi, w in enumerate(ws):
+    for i, b in enumerate(betas):
+        q = []
+        starting_lattice = data[i]
+        for next_epoch in range(w, nepochs):
+            next_lattice = data[next_epoch * len(betas) + i]
+            q.append(logand(starting_lattice, next_lattice))
+            starting_lattice = data[(next_epoch - w) * len(betas) + i] 
+        plt.plot([2 ** j for j in range(w, nepochs)], q, label=f"beta={b:.2f}", color=colors[wi])
 
 plt.legend()
 plt.xscale("log")

@@ -1,3 +1,10 @@
+/*
+ * L=12, 2^25 sweeps, 8 temperatures:
+ * real	378m7,275s
+ * user	5663m39,750s
+ * sys	6m0,481s
+ */
+
 #include <algorithm>
 #include <cassert>
 #include <iostream>
@@ -216,9 +223,16 @@ void slice_sweep_randomized(
     std::vector<std::vector<std::tuple<int, int>>> &slice_coords,
     const float beta) {
   {
-    const auto tid = omp_get_thread_num();
-    std::shuffle(slice_coords[tid].begin(), slice_coords[tid].end(), gens[tid]);
-    for (const auto &[j, k] : slice_coords[tid]) {
+    //const auto tid = omp_get_thread_num();
+    // std::shuffle(slice_coords[tid].begin(), slice_coords[tid].end(),
+    // gens[tid]);
+
+    // for (const auto &[j, k] : slice_coords[tid]) {
+    //   step(lattice, N, i, j, k, gens, nn_dis, unis, beta);
+    // }
+    for (int s = 0; s < N * N; ++s) {
+      const auto j = std::rand() % N;
+      const auto k = std::rand() % N;
       step(lattice, N, i, j, k, gens, nn_dis, unis, beta);
     }
   }
@@ -251,6 +265,19 @@ void sweep(short *__restrict lattice, const int N,
       }
     }
   }
+}
+
+void sweep_fully_random(short * lattice, const int & L, const float & beta,
+                        std::vector<std::mt19937> &gens,
+                        std::vector<std::uniform_int_distribution<>> &nn_dis,
+                        std::vector<std::uniform_real_distribution<>> &unis)
+{
+    for(int t=0;t<L*L*L;++t)
+    {
+        const int pos = std::rand() % (L * L * L);
+        const auto [i, j, k] = revert(pos, L);
+        step(lattice, L, i, j, k, gens, nn_dis, unis, beta);
+    }
 }
 
 float energy(short *__restrict lattice, const int &L) {
@@ -288,97 +315,117 @@ void dump_copies(short *copies, const int &L) {
   }
 }
 
-void try_exchange(short *lattice, const int &L, short *copies,
-                  const int &flag) {
+
+void try_exchange_all(short *lattice, const int &L, short *copies,
+                  float *all_energies, float *betas, int *betas_idx) {
   int rk, sz;
   MPI_Comm_rank(MPI_COMM_WORLD, &rk);
   MPI_Comm_size(MPI_COMM_WORLD, &sz);
-  const int N = L * L * L;
 
-  float rank_energy, partner_energy;
-  rank_energy = energy(lattice, L);
+  float rank_energy = energy(lattice, L);
+  MPI_Gather(&rank_energy, 1, MPI_FLOAT, all_energies, 1, MPI_FLOAT, 0,
+             MPI_COMM_WORLD);
 
-  float min_beta = .1;
-  float max_beta = 4.;
-  float d_beta = (max_beta - min_beta) / (sz - 1);
+  if (rk == 0)
+  {
+      const int f = std::rand() & 1;
+      if (f)
+      {
+          // (0,1), (2,3) ...
 
-  int exchange_flag = -1;
-  if (flag) {
-    int partner = -1;
-    if (rk % 2 == 0) {
-      partner = rk + 1;
-      const float bi = min_beta + rk * d_beta;
-      const float bj = min_beta + partner * d_beta;
+          for(int i=0;i<sz;i+=2)
+          {
+            int changer, partner; changer = partner = -1;
+            for (int j=0;j<sz;++j)
+            {
+                if (betas_idx[j] == i) changer = j;
+                if (betas_idx[j] == i + 1) partner = j;
+                if (partner != -1 && changer != -1) break;
+            }
 
-      MPI_Recv(&partner_energy, 1, MPI_INT, partner, 0, MPI_COMM_WORLD,
-               MPI_STATUS_IGNORE);
-
-      const float dE = std::exp((-bj * rank_energy - bi * partner_energy) /
-                                (-bi * rank_energy - bj * partner_energy));
-
-      exchange_flag = (int)(dE > std::rand() / (float)(RAND_MAX));
-
-      MPI_Send(&exchange_flag, 1, MPI_INT, partner, 0, MPI_COMM_WORLD);
-
-      if (exchange_flag) {
-        MPI_Sendrecv_replace(lattice, N, MPI_SHORT, partner, 0, partner, 0,
-                             MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            const float bi = betas[changer];
+            const float bj = betas[partner];
+            const float ei = all_energies[changer];
+            const float ej = all_energies[partner];
+            const float dE = std::exp((-bj * ei - bi * ej) / (-bi * ei - bj * ej));
+            if ((int)(dE > std::rand() / (float)(RAND_MAX))) {
+              const auto tmp = betas[changer];
+              betas[changer] = betas[partner];
+              betas[partner] = tmp;
+              const auto tmp_idx = betas_idx[changer];
+              betas_idx[changer] = betas_idx[partner];
+              betas_idx[partner] = tmp_idx; 
+            }
+          }
       }
-      // exchange debugging statement
-      // std::cout << rk << " <-> " << partner << "\n";
-      // if( exchange_flag && rk == 0) std::cout << "rank 0 exchanged\n";
-    } else {
-      partner = rk - 1;
-      MPI_Send(&rank_energy, 1, MPI_INT, partner, 0, MPI_COMM_WORLD);
+      else
+      {
+          // (1,2), (3,4) ...
+          for(int i=1;i<sz-1;i+=2)
+          {
+            int changer, partner; changer = partner = -1;
+            for (int j=0;j<sz;++j)
+            {
+                if (betas_idx[j] == i) changer = j;
+                if (betas_idx[j] == i + 1) partner = j;
+                if (partner != -1 && changer != -1) break;
+            }
 
-      MPI_Recv(&exchange_flag, 1, MPI_INT, partner, 0, MPI_COMM_WORLD,
-               MPI_STATUS_IGNORE);
-
-      if (exchange_flag) {
-        MPI_Sendrecv_replace(lattice, N, MPI_SHORT, partner, 0, partner, 0,
-                             MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            const float bi = betas[changer];
+            const float bj = betas[partner];
+            const float ei = all_energies[changer];
+            const float ej = all_energies[partner];
+            const float dE = std::exp((-bj * ei - bi * ej) / (-bi * ei - bj * ej));
+            if ((int)(dE > std::rand() / (float)(RAND_MAX))) {
+              const auto tmp = betas[changer];
+              betas[changer] = betas[partner];
+              betas[partner] = tmp;
+              const auto tmp_idx = betas_idx[changer];
+              betas_idx[changer] = betas_idx[partner];
+              betas_idx[partner] = tmp_idx; 
+            }
+          }
       }
+  }
+
+  MPI_Bcast(betas, sz, MPI_FLOAT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(betas_idx, sz, MPI_INT, 0, MPI_COMM_WORLD);
+}
+
+
+
+void try_exchange(short *lattice, const int &L, short *copies,
+                  float *all_energies, float *betas, int *betas_idx) {
+  int rk, sz;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rk);
+  MPI_Comm_size(MPI_COMM_WORLD, &sz);
+  float rank_energy = energy(lattice, L);
+  MPI_Gather(&rank_energy, 1, MPI_FLOAT, all_energies, 1, MPI_FLOAT, 0,
+             MPI_COMM_WORLD);
+  if (rk == 0) {
+    int changer = betas_idx[std::rand() % sz];
+    int partner = betas_idx[std::rand() % sz];
+    while (std::abs(changer - partner) != 1) // want to get a neighboring temperature
+      partner = betas_idx[std::rand() % sz];
+
+    const float bi = betas[changer];
+    const float bj = betas[partner];
+    const float ei = all_energies[changer];
+    const float ej = all_energies[partner];
+    const float dE = std::exp((-bj * ei - bi * ej) / (-bi * ei - bj * ej));
+    if ((int)(dE > std::rand() / (float)(RAND_MAX)))
+    {
+      const auto tmp = betas[changer];
+      betas[changer] = betas[partner];
+      betas[partner] = tmp;
+      const auto tmp_idx = betas_idx[changer];
+      betas_idx[changer] = betas_idx[partner];
+      betas_idx[partner] = tmp_idx;
     }
   }
 
-  else {
-    int partner = -1;
-    if (rk == 0 || rk == sz - 1)
-      return;
-
-    if (rk % 2 == 1) {
-      partner = rk + 1;
-
-      const float bi = min_beta + rk * d_beta;
-      const float bj = min_beta + partner * d_beta;
-      MPI_Recv(&partner_energy, 1, MPI_INT, partner, 0, MPI_COMM_WORLD,
-               MPI_STATUS_IGNORE);
-      const float dE = std::exp((-bj * rank_energy - bi * partner_energy) /
-                                (-bi * rank_energy - bj * partner_energy));
-
-      exchange_flag = (int)(dE > std::rand() / (float)(RAND_MAX));
-
-      MPI_Send(&exchange_flag, 1, MPI_INT, partner, 0, MPI_COMM_WORLD);
-
-      if (exchange_flag) {
-        MPI_Sendrecv_replace(lattice, N, MPI_SHORT, partner, 0, partner, 0,
-                             MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      }
-      // exchange debugging statement
-      // std::cout << rk << " <-> " << partner << "\n";
-    } else {
-      partner = rk - 1;
-      MPI_Send(&rank_energy, 1, MPI_INT, partner, 0, MPI_COMM_WORLD);
-
-      MPI_Recv(&exchange_flag, 1, MPI_INT, partner, 0, MPI_COMM_WORLD,
-               MPI_STATUS_IGNORE);
-
-      if (exchange_flag) {
-        MPI_Sendrecv_replace(lattice, N, MPI_SHORT, partner, 0, partner, 0,
-                             MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      }
-    }
-  }
+  MPI_Bcast(betas, sz, MPI_FLOAT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(betas_idx, sz, MPI_INT, 0, MPI_COMM_WORLD);
 }
 
 void seed(int k) { srand(time(NULL) + k); }
@@ -393,6 +440,8 @@ int main(int argc, char **argv) {
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &rk);
   MPI_Comm_size(MPI_COMM_WORLD, &sz);
+
+  assert(sz == 8);
 
   // seed all ranks differently
   seed(rk);
@@ -423,11 +472,13 @@ int main(int argc, char **argv) {
   if (posix_memalign((void **)&lattice, align, padded_N * sizeof(short)) != 0)
     return 1;
 
-  // create and distribute lattice to all ranks
-  if (rk == 0)
-    build_lattice(lattice, L, r, b);
+  // create and distribute lattice to all ranks -- much better to just have
+  // random initial configs for all ranks!
+  //
+  // if (rk == 0)
+  build_lattice(lattice, L, r, b);
 
-  MPI_Bcast(lattice, L * L * L, MPI_SHORT, 0, MPI_COMM_WORLD);
+  // MPI_Bcast(lattice, L * L * L, MPI_SHORT, 0, MPI_COMM_WORLD);
 
   const int nthreads = get_num_threads();
   std::vector<std::mt19937> thread_generators(2 * nthreads);
@@ -471,29 +522,26 @@ int main(int argc, char **argv) {
     std::sort(slice_coords[tid].begin(), slice_coords[tid].end());
   }
 
-  // distribute configs to all ranks
-  // start parallel tempering loop:
-  // 1. gather and save
-  // 2. decide for strategy [flag]
-  // 3. - if flag: (0,1) (2,3) ...
-  //    - else:    (1,2) (3,4) ... exclude {0, sz-1}
-  // 4. first one gets other's energy
-  // 5. then signal upon metropolis criterion
-  // 6. sendrecv_replace
-
   short *copies = nullptr;
   if (rk == 0) {
     copies = (short *)malloc(sizeof(short) * L * L * L * sz);
   }
 
-  const int nsweeps = (1 << 17) + 1;
+  const int nsweeps = (1 << 14) + 1;
 
-  const auto beta_min = .5;
-  const auto beta_max = 4.;
-  const auto db = (beta_max - beta_min) / (sz - 1);
-  const float rank_beta = beta_min + rk * db;
+  float min_beta = .3;
+  float max_beta = 4.;
+  float *betas = (float *)malloc(sizeof(float) * sz);
+  float t = min_beta;
+  int currbeta = 0;
+  // ATTENTION: this here is hardcoded for 8 (!!!!) ranks -- more or less ranks (ie. sz != 8) would yield a bug
+  if (sz != 8) return 1;
+  while (t <= max_beta) {
+    betas[currbeta++] = t;
+    t *= 1.4;
+  }
 
-  int curr = 1;
+  int curr = 1<<10;
 
   int curr_print = 1;
 
@@ -502,65 +550,103 @@ int main(int argc, char **argv) {
   std::uniform_real_distribution<> uni(0., 1.);
   assert(L % 4 == 0 && "L must be a factor of 4!");
 
+  float *all_energies = nullptr;
+  int *beta_idx = (int *)malloc(sizeof(int) * sz);
+  if (rk == 0) {
+    all_energies = (float *)malloc(sizeof(float) * sz);
+  }
+  for (int i = 0; i < sz; ++i)
+    beta_idx[i] = i;
+
+  std::vector<std::vector<float>> betas_saved;
+
+  float mybeta = betas[rk];
   for (int i = 1; i <= nsweeps; ++i) {
-    sweep(lattice, N, thread_generators, nn_dis, unis, rank_beta, slice_coords);
+    mybeta = betas[rk];
+    sweep_fully_random(lattice, N, mybeta, thread_generators, nn_dis, unis);
+    //sweep(lattice, N, thread_generators, nn_dis, unis, mybeta, slice_coords);
 #pragma omp master
     {
-      auto red = sample(lattice, N * N * N, r, 1);
-      auto blue = sample(lattice, N * N * N, b, 2);
+      if (i % 10 == 0)
+      {
+        auto red = sample(lattice, N * N * N, r, 1);
+        auto blue = sample(lattice, N * N * N, b, 2);
 
-      auto [ii, j, k] = revert(red, N);
-      auto [x, y, z] = revert(blue, N);
+        auto [ii, j, k] = revert(red, N);
+        auto [x, y, z] = revert(blue, N);
 
-      float E1 =
-          nn_energy(lattice, N, ii, j, k) + nn_energy(lattice, N, x, y, z);
-      exchange(lattice, N, red, blue);
-      float E2 =
-          nn_energy(lattice, N, ii, j, k) + nn_energy(lattice, N, x, y, z);
-      auto dE = E2 - E1;
-      if (uni(gen) < std::exp(-rank_beta * dE)) {
+        float E1 =
+            nn_energy(lattice, N, ii, j, k) + nn_energy(lattice, N, x, y, z);
         exchange(lattice, N, red, blue);
-      }
-    }
-
-    if (i == curr && sz > 1) {
-      // get all configurations into `copies`
-      MPI_Gather(lattice, L * L * L, MPI_SHORT, copies, L * L * L, MPI_SHORT, 0,
-                 MPI_COMM_WORLD);
-      //if (rk == 0) dump_copies(copies, L);
-      //
-      //
-      //if (rk == 0) std::cout << "sweep " << i << "\n";
-
-      
-      // decide on a common strategy to attempt replica exchanges across
-      // neighboring temperatures
-      int flag = std::rand() & 1;
-      MPI_Bcast(&flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-      // try to exchange configurations between neighboring temperatures
-      try_exchange(lattice, L, copies, flag);
-      curr += 5000;
-    }
-
-    if (i == curr_print)
-    {
-      MPI_Gather(lattice, L * L * L, MPI_SHORT, copies, L * L * L, MPI_SHORT, 0,
-                 MPI_COMM_WORLD);
-      if (rk == 0) {
-        std::cout << i << ",";
-        for (int i = 0; i < sz; ++i) {
-          if (i < sz - 1)
-            std::cout << energy(copies + i * L * L * L, L) << ",";
-          else
-            std::cout << energy(copies + i * L * L * L, L) << "\n";
+        float E2 =
+            nn_energy(lattice, N, ii, j, k) + nn_energy(lattice, N, x, y, z);
+        auto dE = E2 - E1;
+        // change it back if criterion is not fulfilled
+        if (uni(gen) >= std::exp(-mybeta * dE)) {
+          exchange(lattice, N, red, blue);
         }
       }
-      curr_print *= 2;
+
+      if (i == curr && sz > 1) {
+        // get all configurations into `copies`
+        MPI_Gather(lattice, L * L * L, MPI_SHORT, copies, L * L * L, MPI_SHORT,
+                   0, MPI_COMM_WORLD);
+        // try to exchange configurations between neighboring temperatures
+        // -> we actually just exchange betas[i] and betas[j] (if successful!)
+        // HERE
+        try_exchange(lattice, L, copies, all_energies, betas, beta_idx);
+        curr += 1000;
+      }
+
+      if (i == curr_print) {
+        std::vector<float> betas_copy;
+        betas_copy.push_back(i);
+        for (int i = 0; i < sz; ++i)
+          betas_copy.push_back(betas[i]);
+        betas_saved.push_back(betas_copy);
+        MPI_Gather(lattice, L * L * L, MPI_SHORT, copies, L * L * L, MPI_SHORT,
+                   0, MPI_COMM_WORLD);
+
+        //if (rk == 0)
+        //{
+        //  std::cout << i << ",";
+        //  for(int i=0;i<sz;++i)
+        //  {
+        //      if (i < sz-1)
+        //          std::cout << energy(copies + i*L*L*L, L) << ",";
+        //      else
+        //          std::cout << energy(copies + i*L*L*L, L) << "\n";
+        //  }
+        //}
+
+
+
+        if (rk == 0) {
+          dump_copies(copies, L);
+        }
+        curr_print *= 2;
+      }
     }
   }
 
+  if (rk == 0) {
+    for (const auto &b : betas_saved) {
+      // one extra for epoch
+      for (int i = 1; i < sz + 1; ++i)
+        std::cout << b[i] << " ";
+      std::cout << "\n";
+    }
+  }
+
+#pragma omp master
+  {
+  free(betas);
+  free(beta_idx);
+  if (rk == 0) {
+    free(all_energies);
+  }
   free(lattice);
+  }
   MPI_Finalize();
   return 0;
 }
