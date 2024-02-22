@@ -235,6 +235,24 @@ void collect_and_print(const int & rk, const int & sz, const int & num_threads, 
   }
 }
 
+void collect_and_dump(const int & rk, const int & sz, const int & num_threads, int *__restrict all_configs, int *__restrict rank_lattices, const int & padded_N, const int & L)
+{
+  MPI_Gather(rank_lattices, padded_N * num_threads, MPI_INT, all_configs, padded_N * num_threads, MPI_INT, 0, MPI_COMM_WORLD);
+  if (rk == 0)
+  {
+    for (int r = 0; r < sz; ++r)
+    {
+      for(int t = 0; t < num_threads; ++t)
+      {
+          int * lattice = all_configs + (r * num_threads + t) * padded_N;
+          for(int i = 0; i < L * L * L; ++i)
+              std::cout << lattice[i] << " ";
+          std::cout << "\n";
+      }
+    }  
+  }
+}
+
 
 void seed(int k) { srand(time(NULL) + k); }
 
@@ -282,9 +300,12 @@ int main(int argc, char **argv) {
   if (posix_memalign((void **)&rank_lattices, align, num_threads * padded_N * sizeof(int)) != 0)
     return 1;
 
-  // first thread in rank builds all lattices for rank
-  for(int t = 0; t < num_threads; ++t)
+#pragma omp parallel
+  {
+    const int t = omp_get_thread_num();
     build_lattice(rank_lattices + t * padded_N, L, r, b);
+  }
+
 
   
 
@@ -329,6 +350,29 @@ int main(int argc, char **argv) {
   }
   
   collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
+
+  if (rk == 0)
+  {
+#pragma omp master
+      {
+          for(int r = 0; r < sz; ++r)
+          {
+            for(int t = 0; t < num_threads; ++t)
+            {
+                int * lattice = all_configs + (r * num_threads + t) * padded_N;
+                int i, j, k; i = j = k = 0;
+                for(;i<L;++i)
+                    for(;j<L;++j)
+                        for(;k<L;++k)
+                            assert(lattice[k + L * (j + i * L)] < 3);
+            }
+          }
+      }
+  }
+
+
+
+
   int nsweeps = 1<<15;
 
   int printer = 1;
@@ -351,6 +395,8 @@ int main(int argc, char **argv) {
       printer *= 2;
     }
   }
+
+  collect_and_dump(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
 
   free(rank_lattices); free(betas);
   if (rk == 0) free(all_configs);
