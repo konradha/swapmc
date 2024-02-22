@@ -178,11 +178,16 @@ void fully_nonlocal_sweep(short *__restrict lattice, const int L,
   // lattice points already to own lattice per thread
   // ie. lattices_per_rank[tid]
   const auto tid = omp_get_thread_num();
+  //int rk;
+  //MPI_Comm_rank(MPI_COMM_WORLD, &rk);
+
   for(int i = 0; i < L * L * L; ++i)
   {
     // is this even better than taking modulo?
     const int site = indices[tid](gens[tid]); 
     const int mv   = indices[tid](gens[tid]);
+//#pragma omp critical
+//    std::cout << beta << "," << site << "," << mv << "\n";
     if (lattice[site] == lattice[mv]) continue;
     const auto [si, sj, sk] = revert(site, L);
     const auto [mi, mj, mk] = revert(mv, L);
@@ -191,7 +196,7 @@ void fully_nonlocal_sweep(short *__restrict lattice, const int L,
     const float E2 = nn_energy(lattice, L, si, sj, sk) + nn_energy(lattice, L, mi, mj, mk) ;
     const float dE = E2 - E1;
     const auto crit = (std::exp(-beta * dE) < 1. ? std::exp(-beta * dE) : 1.);
-    if (unis[tid](gens[tid]) < crit) continue;
+    if (crit == 1. || unis[tid](gens[tid]) < crit) continue;
     exchange(lattice, L, site, mv);
    }
 }
@@ -245,7 +250,7 @@ int main(int argc, char **argv) {
   MPI_Comm_size(MPI_COMM_WORLD, &sz);
 
   // seed all ranks differently
-  seed(rk);
+  seed(rk + std::rand() % 100);
 
   const auto arg_n = argv[1];
   const auto L = atoi(arg_n);
@@ -271,9 +276,9 @@ int main(int argc, char **argv) {
 
   short * rank_lattices = nullptr;
 
-  const unsigned int align = 64;
+  const unsigned int align = 128;
   const auto padded_N = (L * L * L + (align - 1)) & ~(align - 1);
-
+  
   if (posix_memalign((void **)&rank_lattices, align, num_threads * padded_N * sizeof(short)) != 0)
     return 1;
 
@@ -317,40 +322,38 @@ int main(int argc, char **argv) {
     if (tid == 0)
       for (int t = 0; t < omp_get_num_threads(); ++t) {
         unis[t] = std::uniform_real_distribution<>(0., 1.);
+        // attention: we won't get an error if sampling outside the range as all lattices are padded
+        // to not introduce e.g. false sharing; program doesn't know about ranges for threads
         indices[t] = std::uniform_int_distribution<>(0, max_idx);
       }
   }
   
   collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
+  int nsweeps = 1<<15;
 
+  int printer = 1;
 
-  int nsweeps = 1000000;
-
-  int printer = 10;
-
+#pragma omp parallel
   for (int i = 1; i <= nsweeps + 1; ++i)
   {
-#pragma omp parallel
     {
       const int tid = omp_get_thread_num();
       const float my_beta = betas[rk * num_threads + tid];
       short * my_lattice = rank_lattices + tid * padded_N; 
       fully_nonlocal_sweep(my_lattice,  L, thread_generators, unis, indices, my_beta);
     }
-
+#pragma omp barrier
+    
+#pragma omp master
     if (i % printer == 0)
     {
       collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L); 
-      printer += 10000;
+      printer *= 2;
     }
   }
-  collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
-
-
 
   free(rank_lattices); free(betas);
   if (rk == 0) free(all_configs);
   MPI_Finalize();
   return 0;
 }
-
