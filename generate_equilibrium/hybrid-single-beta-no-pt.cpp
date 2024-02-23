@@ -349,8 +349,7 @@ int main(int argc, char **argv) {
       }
   }
   
-  collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
-
+ 
   if (rk == 0)
   {
 #pragma omp master
@@ -364,18 +363,19 @@ int main(int argc, char **argv) {
                 for(;i<L;++i)
                     for(;j<L;++j)
                         for(;k<L;++k)
-                            assert(lattice[k + L * (j + i * L)] < 3);
+                            assert(lattice[k + L * (j + i * L)] < 3 && lattice[k + L * (j + i * L)] > -1);
             }
           }
       }
   }
 
+  //collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
+  collect_and_dump(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
 
-
-
-  int nsweeps = 1<<15;
+  int nsweeps = 1<<27;
 
   int printer = 1;
+
 
 #pragma omp parallel
   for (int i = 1; i <= nsweeps + 1; ++i)
@@ -386,17 +386,22 @@ int main(int argc, char **argv) {
       int * my_lattice = rank_lattices + tid * padded_N; 
       fully_nonlocal_sweep(my_lattice,  L, thread_generators, unis, indices, my_beta);
     }
+
+// unfortunately threads have to sync for every sweep because else they run off and we can't get them back
+// causing massive errors
 #pragma omp barrier
     
 #pragma omp master
     if (i % printer == 0)
     {
-      collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L); 
+      //collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L); 
+      collect_and_dump(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
       printer *= 2;
+      // have all ranks wait before continuing sweeps
+      // minimal overhead to be safe
+      MPI_Barrier(MPI_COMM_WORLD);
     }
   }
-
-  collect_and_dump(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
 
   free(rank_lattices); free(betas);
   if (rk == 0) free(all_configs);
