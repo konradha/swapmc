@@ -41,7 +41,7 @@ def nn_e(lattice, i, j, k, L):
     return e
 
 rng = np.random.default_rng()
-L = 12
+L = 20
 rho = .75
 rho1 = .45
 rho2 = .3
@@ -50,24 +50,21 @@ N = int(rho * L ** 3)
 N1 = int(rho1 * L ** 3)
 N2 = N - N1
 
-gs = []
-for _ in range(10):
-    g = np.zeros((L, L, L))
-    nr, nb = 0, 0
-    while nr < N1:
-        i, j, k = rng.integers(0, L, 3) % L
-        if (i + j + k) % 2 == 0 and g[i, j, k] == 0:
-            g[i, j, k] = 1
-            nr += 1
+g = np.zeros((L, L, L))
+nr, nb = 0, 0
+while nr < N1:
+    i, j, k = rng.integers(0, L, 3) % L
+    if (i + j + k) % 2 == 0 and g[i, j, k] == 0:
+        g[i, j, k] = 1
+        nr += 1
 
-    while nb < N2:
-        i, j, k = rng.integers(0, L, 3) % L
-        if (i + j + k) % 2 == 1 and g[i, j, k] == 0:
-            g[i, j, k] = 2
-            nb += 1
-    gs.append(g)
+while nb < N2:
+    i, j, k = rng.integers(0, L, 3) % L
+    if (i + j + k) % 2 == 1 and g[i, j, k] == 0:
+        g[i, j, k] = 2
+        nb += 1
 
-lattice = gs[0]
+lattice = g
 print(np.sum(lattice == 1), np.sum(lattice == 2))
 
 
@@ -88,7 +85,7 @@ def sweep(lattice, L, beta):
     return energy(lattice, L)
 
 es = []
-nsweeps = 2000
+nsweeps = 100
 for _ in tqdm(range(nsweeps)):
     es.append(sweep(lattice, L, 4.))
 plt.plot(range(nsweeps), es)
@@ -96,7 +93,7 @@ plt.show()
 
 def get_random_neighbor(i, j, k, L):
     nn = get_nn(i, j, k, L)
-    mv = rng.integers(0, len(nn) - 1, 1)
+    mv = rng.integers(0, len(nn), 1)
     return nn[mv]
 
 def local_sweep(lattice, L, beta):
@@ -119,7 +116,7 @@ lattice_cpy = deepcopy(lattice)
 
 betas = [.5, 4.]
 lattices = [lattice, lattice_cpy]
-nsweeps = 100
+nsweeps = 50
 
 configs = [[deepcopy(lattice)], [deepcopy(lattice_cpy)]]
 for b, beta in enumerate(betas):
@@ -154,12 +151,11 @@ for b, beta in enumerate(betas):
         s = np.sum(np.logical_and(lat1_s1, lat2_s1) + np.logical_and(lat1_s2, lat2_s2))
         c = q(s, rho, rho1, rho2, L)
         cs.append(c)
-    plt.plot(range(nsweeps), cs, label=f"beta={beta:.2f})")
+    plt.plot(.1 + np.array(range(nsweeps)), cs, label=f"beta={beta:.2f})")
 
 plt.legend()
+plt.xscale("log")
 plt.xlabel("MCS / [1]")
 plt.ylabel("C_t / [1]")
+plt.ylim(-.1, 1.1)
 plt.show()
-
-
-
