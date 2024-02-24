@@ -1,6 +1,7 @@
 /*
- * mpicxx -pedantic -ffast-math -march=native -O3 -Wall -fopenmp -Wunknown-pragmas  -lm -lstdc++ -std=c++17 hybrid-single-beta-no-pt.cpp -o to_hybrid
- * mpirun -np 2 -x OMP_NUM_THREADS=4 to_hybrid 12
+ * mpicxx -pedantic -ffast-math -march=native -O3 -Wall -fopenmp
+ * -Wunknown-pragmas  -lm -lstdc++ -std=c++17 hybrid-single-beta-no-pt.cpp -o
+ * to_hybrid mpirun -np 2 -x OMP_NUM_THREADS=4 to_hybrid 12
  */
 
 #include <algorithm>
@@ -34,7 +35,6 @@ void dump_lattice(const int *__restrict lattice, int N) {
   }
 }
 
-
 std::random_device rd_sample;
 std::mt19937 gen_sample(__rdtsc());
 int sample_vacant(int *grid, int sz) {
@@ -64,6 +64,58 @@ int sample(const int *__restrict a, const int &N, const int &count,
   return res;
 }
 
+static inline std::tuple<int, int, int> revert(int s, int L = 30) {
+  const auto k = s % L;
+  const auto j = ((s - k) / L) % L;
+  const auto i = (s - k - j * L) / (L * L);
+  return {i, j, k};
+}
+
+int build_lattice_diagonal(
+    int *grid,  std::vector<std::mt19937> &gens,
+    std::vector<std::uniform_int_distribution<>> &indices,const int N, const int num_red,
+    const int num_blue) {
+  for (int i = 0; i < N * N * N; ++i)
+    grid[i] = 0; // all sites vacant in the beginning
+  int curr_red, curr_blue;
+  curr_red = curr_blue = 0;
+  const int tid = omp_get_thread_num();
+  while (curr_red < num_red) { 
+    const int site = indices[tid](gens[tid]);
+    auto [i, j, k] = revert(site, N);
+    if ((i + j + k) % 2 == 0 && grid[site] == 0) {
+      grid[site] = 1;
+      curr_red++;
+    }
+  }
+
+
+  while (curr_blue < num_blue) { 
+    const int site = indices[tid](gens[tid]);
+    auto [i, j, k] = revert(site, N);
+    if ((i + j + k) % 2 == 1 && grid[site] == 0) {
+      grid[site] = 2;
+      curr_blue++;
+    }
+  }
+
+  int nred, nblue; nred = nblue = 0;
+  for(int i = 0; i < N*N*N;++i)
+  {
+      if (grid[i] == 1) nred++;
+      else if ( grid[i] == 2) nblue++;
+  }
+
+  assert(nred == num_red); 
+  assert(nblue == num_blue);
+
+#pragma omp barrier
+#pragma omp master
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  return 0;
+}
+
 int build_lattice(int *grid, const int N, const int num_red,
                   const int num_blue) {
   for (int i = 0; i < N * N * N; ++i)
@@ -73,7 +125,7 @@ int build_lattice(int *grid, const int N, const int num_red,
 
   while (curr_red < num_red) {
     try {
-      auto site = sample_vacant(grid, N * N * N);
+      auto site = std::rand() % N * N * N; // sample_vacant(grid, N * N * N);
       grid[site] = 1;
       curr_red++;
     } catch (const std::exception &e) {
@@ -84,7 +136,7 @@ int build_lattice(int *grid, const int N, const int num_red,
 
   while (curr_blue < num_blue) {
     try {
-      auto site = sample_vacant(grid, N * N * N);
+      auto site = std::rand() % N * N * N; // sample_vacant(grid, N * N * N);
       grid[site] = 2;
       curr_blue++;
     } catch (const std::exception &e) {
@@ -95,18 +147,11 @@ int build_lattice(int *grid, const int N, const int num_red,
   return 0;
 }
 
-static inline void exchange(int *__restrict grid, const int &N,
-                            const int &site, const int &to) {
+static inline void exchange(int *__restrict grid, const int &N, const int &site,
+                            const int &to) {
   const auto tmp = grid[site];
   grid[site] = grid[to];
   grid[to] = tmp;
-}
-
-static inline std::tuple<int, int, int> revert(int s, int L = 30) {
-  const auto k = s % L;
-  const auto j = ((s - k) / L) % L;
-  const auto i = (s - k - j * L) / (L * L);
-  return {i, j, k};
 }
 
 std::array<int, 6> get_neighbors(const int &i, const int &j, const int &k,
@@ -167,39 +212,70 @@ static inline const float nn_energy(int *__restrict lattice, const int N,
   return res;
 }
 
-
 // single thread calls this function
 void fully_nonlocal_sweep(int *__restrict lattice, const int L,
-           std::vector<std::mt19937> &gens,
-           std::vector<std::uniform_real_distribution<>> &unis,
-           std::vector<std::uniform_int_distribution<>> &indices,
-           const float beta)
-{
+                          std::vector<std::mt19937> &gens,
+                          std::vector<std::uniform_real_distribution<>> &unis,
+                          std::vector<std::uniform_int_distribution<>> &indices,
+                          const float beta) {
   // lattice points already to own lattice per thread
   // ie. lattices_per_rank[tid]
   const auto tid = omp_get_thread_num();
-  //int rk;
-  //MPI_Comm_rank(MPI_COMM_WORLD, &rk);
-  
+  // int rk;
+  // MPI_Comm_rank(MPI_COMM_WORLD, &rk);
 
-  for(int i = 0; i < L * L * L; ++i)
-  {
+  for (int i = 0; i < L * L * L; ++i) {
     // is this even better than taking modulo?
-    const int site = indices[tid](gens[tid]); 
-    const int mv   = indices[tid](gens[tid]);
-//#pragma omp critical
-//    std::cout << beta << "," << site << "," << mv << "\n";
-    if (lattice[site] == lattice[mv]) continue;
+    const int site = indices[tid](gens[tid]);
+    const int mv = indices[tid](gens[tid]);
+    //#pragma omp critical
+    //    std::cout << beta << "," << site << "," << mv << "\n";
+    if (lattice[site] == lattice[mv])
+      continue;
     const auto [si, sj, sk] = revert(site, L);
     const auto [mi, mj, mk] = revert(mv, L);
-    const float E1 = nn_energy(lattice, L, si, sj, sk) + nn_energy(lattice, L, mi, mj, mk) ;
+    const float E1 =
+        nn_energy(lattice, L, si, sj, sk) + nn_energy(lattice, L, mi, mj, mk);
     exchange(lattice, L, site, mv);
-    const float E2 = nn_energy(lattice, L, si, sj, sk) + nn_energy(lattice, L, mi, mj, mk) ;
+    const float E2 =
+        nn_energy(lattice, L, si, sj, sk) + nn_energy(lattice, L, mi, mj, mk);
     const float dE = E2 - E1;
     const auto crit = (std::exp(-beta * dE) < 1. ? std::exp(-beta * dE) : 1.);
-    if (crit == 1. || unis[tid](gens[tid]) < crit) continue;
+    if (crit == 1. || unis[tid](gens[tid]) < crit)
+      continue;
     exchange(lattice, L, site, mv);
-   }
+  }
+}
+
+void local_sweep(int *__restrict lattice, const int L,
+                          std::vector<std::mt19937> &gens,
+                          std::vector<std::uniform_real_distribution<>> &unis,
+                          std::vector<std::uniform_int_distribution<>> &indices,
+                          const float beta)
+{
+  const auto tid = omp_get_thread_num();
+  for (int i = 0; i < L * L * L; ++i) {
+    // is this even better than taking modulo?
+    const int site = indices[tid](gens[tid]);
+    const auto nns = nn[site];
+    const auto nb  = indices[tid](gens[tid]) % 6;
+    const auto mv = nns[nb]; // pick a neighbor
+    const auto [mi, mj, mk] = revert(mv, L);
+    if (lattice[site] == lattice[mv])
+      continue;
+    const auto [si, sj, sk] = revert(site, L);
+    //const auto [mi, mj, mk] = revert(mv, L);
+    const float E1 =
+        nn_energy(lattice, L, si, sj, sk) + nn_energy(lattice, L, mi, mj, mk);
+    exchange(lattice, L, site, mv);
+    const float E2 =
+        nn_energy(lattice, L, si, sj, sk) + nn_energy(lattice, L, mi, mj, mk);
+    const float dE = E2 - E1;
+    const auto crit = (std::exp(-beta * dE) < 1. ? std::exp(-beta * dE) : 1.);
+    if (crit == 1. || unis[tid](gens[tid]) < crit)
+      continue;
+    exchange(lattice, L, site, mv);
+  }
 }
 
 int get_num_threads(void) {
@@ -212,47 +288,48 @@ int get_num_threads(void) {
   return num_threads;
 }
 
-int energy(int *__restrict lattice, const int & L)
-{
-    int e = 0;
-    #pragma omp parallel for collapse(3) reduction(+ : e)
-    for(int i=0;i<L;++i)
-        for(int j=0;j<L;++j)
-            for(int k=0;k<L;++k)
-                e += local_energy(lattice, L, i, j, k);
-    return e;
+int energy(int *__restrict lattice, const int &L) {
+  int e = 0;
+#pragma omp parallel for collapse(3) reduction(+ : e)
+  for (int i = 0; i < L; ++i)
+    for (int j = 0; j < L; ++j)
+      for (int k = 0; k < L; ++k)
+        e += local_energy(lattice, L, i, j, k);
+  return e;
 }
 
-void collect_and_print(const int & rk, const int & sz, const int & num_threads, int *__restrict all_configs, int *__restrict rank_lattices, const int & padded_N, const int & L)
-{
-  MPI_Gather(rank_lattices, padded_N * num_threads, MPI_INT, all_configs, padded_N * num_threads, MPI_INT, 0, MPI_COMM_WORLD);
-  if (rk == 0)
-  {
+void collect_and_print(const int &rk, const int &sz, const int &num_threads,
+                       int *__restrict all_configs,
+                       int *__restrict rank_lattices, const int &padded_N,
+                       const int &L) {
+  MPI_Gather(rank_lattices, padded_N * num_threads, MPI_INT, all_configs,
+             padded_N * num_threads, MPI_INT, 0, MPI_COMM_WORLD);
+  if (rk == 0) {
     for (int r = 0; r < sz; ++r)
-      for(int t = 0; t < num_threads; ++t)
-          std::cout << energy(all_configs + (r * num_threads + t) * padded_N, L) << " ";
+      for (int t = 0; t < num_threads; ++t)
+        std::cout << energy(all_configs + (r * num_threads + t) * padded_N, L)
+                  << " ";
     std::cout << "\n";
   }
 }
 
-void collect_and_dump(const int & rk, const int & sz, const int & num_threads, int *__restrict all_configs, int *__restrict rank_lattices, const int & padded_N, const int & L)
-{
-  MPI_Gather(rank_lattices, padded_N * num_threads, MPI_INT, all_configs, padded_N * num_threads, MPI_INT, 0, MPI_COMM_WORLD);
-  if (rk == 0)
-  {
-    for (int r = 0; r < sz; ++r)
-    {
-      for(int t = 0; t < num_threads; ++t)
-      {
-          int * lattice = all_configs + (r * num_threads + t) * padded_N;
-          for(int i = 0; i < L * L * L; ++i)
-              std::cout << lattice[i] << " ";
-          std::cout << "\n";
+void collect_and_dump(const int &rk, const int &sz, const int &num_threads,
+                      int *__restrict all_configs,
+                      int *__restrict rank_lattices, const int &padded_N,
+                      const int &L) {
+  MPI_Gather(rank_lattices, padded_N * num_threads, MPI_INT, all_configs,
+             padded_N * num_threads, MPI_INT, 0, MPI_COMM_WORLD);
+  if (rk == 0) {
+    for (int r = 0; r < sz; ++r) {
+      for (int t = 0; t < num_threads; ++t) {
+        int *lattice = all_configs + (r * num_threads + t) * padded_N;
+        for (int i = 0; i < L * L * L; ++i)
+          std::cout << lattice[i] << " ";
+        std::cout << "\n";
       }
-    }  
+    }
   }
 }
-
 
 void seed(int k) { srand(time(NULL) + k); }
 
@@ -274,9 +351,9 @@ int main(int argc, char **argv) {
   const auto L = atoi(arg_n);
 
   const float rho = .75;
-  
-  const float rho1 = .4 * rho;
-  const float rho2 = rho - rho1;
+
+  const float rho1 = .45; // .6 * rho
+  const float rho2 = .3;  // .4 * rho
   const int numparts = static_cast<int>(rho * L * L * L);
 
   const int r = static_cast<int>(rho1 * L * L * L);
@@ -292,25 +369,14 @@ int main(int argc, char **argv) {
 
   const int num_threads = 4;
 
-  int * rank_lattices = nullptr;
+  int *rank_lattices = nullptr;
 
   const unsigned int align = 128;
   const auto padded_N = (L * L * L + (align - 1)) & ~(align - 1);
-  
-  if (posix_memalign((void **)&rank_lattices, align, num_threads * padded_N * sizeof(int)) != 0)
+
+  if (posix_memalign((void **)&rank_lattices, align,
+                     num_threads * padded_N * sizeof(int)) != 0)
     return 1;
-
-#pragma omp parallel
-  {
-    const int t = omp_get_thread_num();
-    build_lattice(rank_lattices + t * padded_N, L, r, b);
-  }
-
-
-  
-
-  int * all_configs = nullptr;
-  if (rk == 0) all_configs = (int *) malloc(sizeof(int) * padded_N * sz * num_threads);
 
   std::vector<std::mt19937> thread_generators(num_threads);
   std::vector<std::uniform_real_distribution<>> unis(num_threads);
@@ -320,20 +386,16 @@ int main(int argc, char **argv) {
   {
     const auto tid = omp_get_thread_num();
 #pragma omp critical
-    {
-      thread_generators[tid].seed(std::random_device()() + tid);
-    }
+    { thread_generators[tid].seed(std::random_device()() + tid); }
   }
 
   const int num_configs = num_threads * sz;
-  float * betas = (float *) malloc(sizeof(float) * num_configs);
-  const float beta_min = 2.;
+  float *betas = (float *)malloc(sizeof(float) * num_configs);
+  const float beta_min = 3.;
   const float beta_max = 4.;
   const float d = (beta_max - beta_min) / num_configs;
-  for(int i = 0; i < num_configs; ++i)
-      betas[i] = beta_min + i * d;
-
-  
+  for (int i = 0; i < num_configs; ++i)
+    betas[i] = beta_min + i * d;
 
 #pragma omp parallel
   {
@@ -343,59 +405,79 @@ int main(int argc, char **argv) {
     if (tid == 0)
       for (int t = 0; t < omp_get_num_threads(); ++t) {
         unis[t] = std::uniform_real_distribution<>(0., 1.);
-        // attention: we won't get an error if sampling outside the range as all lattices are padded
-        // to not introduce e.g. false sharing; program doesn't know about ranges for threads
+        // attention: we won't get an error if sampling outside the range as all
+        // lattices are padded to not introduce e.g. false sharing; program
+        // doesn't know about ranges for threads
         indices[t] = std::uniform_int_distribution<>(0, max_idx);
       }
   }
-  
- 
-  if (rk == 0)
+
+#pragma omp parallel
   {
-#pragma omp master
-      {
-          for(int r = 0; r < sz; ++r)
-          {
-            for(int t = 0; t < num_threads; ++t)
-            {
-                int * lattice = all_configs + (r * num_threads + t) * padded_N;
-                int i, j, k; i = j = k = 0;
-                for(;i<L;++i)
-                    for(;j<L;++j)
-                        for(;k<L;++k)
-                            assert(lattice[k + L * (j + i * L)] < 3 && lattice[k + L * (j + i * L)] > -1);
-            }
-          }
-      }
+    const int t = omp_get_thread_num();
+    build_lattice_diagonal(rank_lattices + t * padded_N, thread_generators,
+                           indices, L, r, b);
   }
 
-  //collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
-  collect_and_dump(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
+  int *all_configs = nullptr;
+  if (rk == 0)
+    all_configs = (int *)malloc(sizeof(int) * padded_N * sz * num_threads);
 
-  int nsweeps = 1<<27;
+  collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,
+                    L);
+  //collect_and_dump(rk, sz, num_threads, all_configs, rank_lattices, padded_N,
+  //L);
+
+
+  if (rk == 0) {
+#pragma omp master
+    {
+      for (int r = 0; r < sz; ++r) {
+        for (int t = 0; t < num_threads; ++t) {
+          const int offset = (r * num_threads + t) * padded_N;
+          const int * lattice = (all_configs + offset);
+          for (int i=0; i < L; ++i)
+          {
+            for (int j=0; j < L; ++j)
+            {
+              for (int k=0; k < L; ++k)
+              { 
+                assert(lattice[k + L * (j + i * L)] < 3 &&
+                       lattice[k + L * (j + i * L)] > -1);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  
+
+  int nsweeps = 1 << 15;
 
   int printer = 1;
 
-
 #pragma omp parallel
-  for (int i = 1; i <= nsweeps + 1; ++i)
-  {
+  for (int i = 1; i <= nsweeps + 1; ++i) {
     {
       const int tid = omp_get_thread_num();
-      const float my_beta = betas[rk * num_threads + tid];     
-      int * my_lattice = rank_lattices + tid * padded_N; 
-      fully_nonlocal_sweep(my_lattice,  L, thread_generators, unis, indices, my_beta);
+      const float my_beta = betas[rk * num_threads + tid];
+      int *my_lattice = rank_lattices + tid * padded_N;
+      fully_nonlocal_sweep(my_lattice, L, thread_generators, unis, indices,
+                           my_beta);
     }
 
-// unfortunately threads have to sync for every sweep because else they run off and we can't get them back
-// causing massive errors
+// unfortunately threads have to sync for every sweep because else they run off
+// and we can't get them back causing massive errors
 #pragma omp barrier
-    
+
 #pragma omp master
-    if (i % printer == 0)
-    {
-      //collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L); 
-      collect_and_dump(rk, sz, num_threads, all_configs, rank_lattices, padded_N,  L);
+    if (i % printer == 0) {
+      collect_and_print(rk, sz, num_threads, all_configs, rank_lattices,
+                        padded_N, L);
+      //collect_and_dump(rk, sz, num_threads, all_configs, rank_lattices,
+      //padded_N,  L);
       printer *= 2;
       // have all ranks wait before continuing sweeps
       // minimal overhead to be safe
@@ -403,8 +485,49 @@ int main(int argc, char **argv) {
     }
   }
 
-  free(rank_lattices); free(betas);
-  if (rk == 0) free(all_configs);
+  if( rk == 0 )
+#pragma omp master
+      std::cout << "local sweeps:\n";
+
+
+  printer = 1;
+  const int local_nsweeps = 1000;
+
+
+#pragma omp parallel
+  for (int i = 1; i <= local_nsweeps + 1; ++i) {
+    {
+      const int tid = omp_get_thread_num();
+      const float my_beta = betas[rk * num_threads + tid];
+      int *my_lattice = rank_lattices + tid * padded_N;
+      local_sweep(my_lattice, L, thread_generators, unis, indices,
+                           my_beta);
+    }
+
+// unfortunately threads have to sync for every sweep because else they run off
+// and we can't get them back causing massive errors
+#pragma omp barrier
+
+#pragma omp master
+    if (i % printer == 0) {
+      collect_and_print(rk, sz, num_threads, all_configs, rank_lattices,
+                        padded_N, L);
+      //collect_and_dump(rk, sz, num_threads, all_configs, rank_lattices,
+      //padded_N,  L);
+      printer *= 2;
+      // have all ranks wait before continuing sweeps
+      // minimal overhead to be safe
+      MPI_Barrier(MPI_COMM_WORLD);
+    }
+  }
+
+  
+ 
+
+  free(rank_lattices);
+  free(betas);
+  if (rk == 0)
+    free(all_configs);
   MPI_Finalize();
   return 0;
 }
