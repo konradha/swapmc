@@ -87,7 +87,7 @@ def sweep(lattice, L, beta):
     return energy(lattice, L)
 
 es = []
-nsweeps = 5000
+nsweeps = 2000
 for _ in tqdm(range(nsweeps)):
     es.append(sweep(lattice, L, 5.))
 plt.plot(range(nsweeps), es)
@@ -139,7 +139,7 @@ lattice_cpy = deepcopy(lattice)
 
 betas = [3., 4.]
 lattices = [lattice, lattice_cpy]
-nsweeps = 1000
+nsweeps = 100
 
 configs = [[deepcopy(lattice)], [deepcopy(lattice_cpy)]]
 for b, beta in enumerate(betas):
@@ -169,7 +169,7 @@ for b, beta in enumerate(betas):
         curr_config = configs[b][i]
         s = np.sum(np.logical_and(beg_lattice == curr_config, beg_lattice > 0))
         c = q(s, .75, .6, .4, L)
-        cs.append(s)
+        cs.append(c)
     plt.plot(.1 + np.array(range(nsweeps)), cs, label=f"beta={beta:.2f})")
 
 plt.legend()
