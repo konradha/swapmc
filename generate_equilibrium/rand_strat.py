@@ -15,6 +15,20 @@ def get_nn(i, j, k, L):
             (i, j, kprev), (i, j, knext),
            ]
 
+def generate_nn_list(L):
+    d = {}
+    for i in range(L):
+        d[i] = {}
+        for j in range(L):
+            d[i][j] = {}
+            for k in range(L):
+                d[i][j][k] = get_nn(i, j, k, L)
+    return d
+
+rng = np.random.default_rng()
+L = 12
+nn_list = generate_nn_list(12) 
+
 def energy(lattice, L):
     e = 0
     for i in range(L):
@@ -24,7 +38,8 @@ def energy(lattice, L):
     return int(e)
 
 def local_e(lattice, i, j, k, L):
-    nn = get_nn(i, j, k, L)
+    #nn = get_nn(i, j, k, L)
+    nn = nn_list[i][j][k]
     e = 0.
     ty = lattice[i, j, k]
     if ty == 0: return 0
@@ -35,14 +50,14 @@ def local_e(lattice, i, j, k, L):
     return (pref - e) ** 2
 
 def nn_e(lattice, i, j, k, L):
-    nn = get_nn(i, j, k, L)
+    #nn = get_nn(i, j, k, L)
+    nn = nn_list[i][j][k]
     e = local_e(lattice, i, j, k, L)
     for (ni, nj, nk) in nn:
         e += local_e(lattice, ni, nj, nk, L)
     return e
 
-rng = np.random.default_rng()
-L = 12
+
 rho = .75
 rho1 = .45
 rho2 = .3
@@ -51,7 +66,7 @@ N = int(rho * L ** 3)
 N1 = int(rho1 * L ** 3)
 N2 = N - N1
 
-g = np.zeros((L, L, L))
+g = np.zeros((L, L, L)).astype(int)
 nr, nb = 0, 0
 while nr < N1:
     i, j, k = rng.integers(0, L, 3) % L
@@ -68,6 +83,8 @@ while nb < N2:
 lattice = g
 print(N1, N2)
 print(np.sum(lattice == 1), np.sum(lattice == 2))
+print(lattice.shape)
+pass
 
 
 def sweep(lattice, L, beta):
@@ -87,7 +104,7 @@ def sweep(lattice, L, beta):
     return energy(lattice, L)
 
 es = []
-nsweeps = 2000
+nsweeps = 10000
 for _ in tqdm(range(nsweeps)):
     es.append(sweep(lattice, L, 5.))
 plt.plot(range(nsweeps), es)
@@ -99,7 +116,8 @@ for i in range(L):
     for j in range(L):
         for k in range(L):
             if lattice[i, j, k] == 0: continue
-            nn = get_nn(i, j, k, L)
+            #nn = get_nn(i, j, k, L)
+            nn = nn_list[i][j][k]
             nn_b = nn_e(lattice, i, j, k, L)
             for (ni, nj, nk) in nn: 
                 if lattice[i, j, k] == lattice[ni, nj, nk]: continue 
@@ -115,7 +133,8 @@ plt.show()
 
 
 def get_random_neighbor(i, j, k, L):
-    nn = get_nn(i, j, k, L)
+    #nn = get_nn(i, j, k, L)
+    nn = nn_list[i][j][k]
     mv = rng.integers(0, len(nn), 1)[0]
     return nn[mv]
 
@@ -137,9 +156,9 @@ def local_sweep(lattice, L, beta):
 
 lattice_cpy = deepcopy(lattice)
 
-betas = [3., 4.]
+betas = [2.5, 4.]
 lattices = [lattice, lattice_cpy]
-nsweeps = 100
+nsweeps = 10000
 
 configs = [[deepcopy(lattice)], [deepcopy(lattice_cpy)]]
 for b, beta in enumerate(betas):
@@ -177,3 +196,7 @@ plt.xscale("log")
 plt.xlabel("MCS / [1]")
 plt.ylabel("C_t / [1]")
 plt.show()
+
+for b, beta in enumerate(betas):
+    with open(f"config-equilibrium-{beta:.2f}.txt", 'w') as f:
+        f.write(' '.join(map(str, list(configs[b][-1].reshape(L*L*L)))))
