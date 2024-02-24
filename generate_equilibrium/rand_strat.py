@@ -2,6 +2,7 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from copy import deepcopy
+from sys import argv
 
 def get_nn(i, j, k, L):
     iprev, inext = (i - 1) % L, (i + 1) % L
@@ -41,7 +42,7 @@ def nn_e(lattice, i, j, k, L):
     return e
 
 rng = np.random.default_rng()
-L = 20
+L = 12
 rho = .75
 rho1 = .45
 rho2 = .3
@@ -65,6 +66,7 @@ while nb < N2:
         nb += 1
 
 lattice = g
+print(N1, N2)
 print(np.sum(lattice == 1), np.sum(lattice == 2))
 
 
@@ -79,21 +81,42 @@ def sweep(lattice, L, beta):
         lattice[i, j, k], lattice[ni, nj, nk] = lattice[ni, nj, nk], lattice[i, j, k] 
         E2 = nn_e(lattice, i, j, k, L) + nn_e(lattice, ni, nj, nk, L)
         dE = E2 - E1
-        if np.random.random() < np.exp(-beta * dE): continue 
+        if dE <= 0 or np.random.random() < np.exp(-beta * dE): continue 
         lattice[i, j, k], lattice[ni, nj, nk] = lattice[ni, nj, nk], lattice[i, j, k]
     assert(np.sum(lattice == 1) == N1 and np.sum(lattice == 2) == N2)
     return energy(lattice, L)
 
 es = []
-nsweeps = 100
+nsweeps = 5000
 for _ in tqdm(range(nsweeps)):
-    es.append(sweep(lattice, L, 4.))
+    es.append(sweep(lattice, L, 5.))
 plt.plot(range(nsweeps), es)
 plt.show()
 
+
+des = []
+for i in range(L):
+    for j in range(L):
+        for k in range(L):
+            if lattice[i, j, k] == 0: continue
+            nn = get_nn(i, j, k, L)
+            nn_b = nn_e(lattice, i, j, k, L)
+            for (ni, nj, nk) in nn: 
+                if lattice[i, j, k] == lattice[ni, nj, nk]: continue 
+                nn_a = nn_e(lattice, ni, nj, nk, L)
+                des.append(nn_a - nn_b)
+des = np.array(des)
+u, c = np.unique(des, return_counts=True)
+c = c / np.sum(c)
+plt.bar(u, c)
+plt.vlines(np.sum(u * c), ymin=0, ymax=max(c))
+plt.show()
+
+
+
 def get_random_neighbor(i, j, k, L):
     nn = get_nn(i, j, k, L)
-    mv = rng.integers(0, len(nn), 1)
+    mv = rng.integers(0, len(nn), 1)[0]
     return nn[mv]
 
 def local_sweep(lattice, L, beta):
@@ -107,23 +130,23 @@ def local_sweep(lattice, L, beta):
         lattice[i, j, k], lattice[ni, nj, nk] = lattice[ni, nj, nk], lattice[i, j, k] 
         E2 = nn_e(lattice, i, j, k, L) + nn_e(lattice, ni, nj, nk, L)
         dE = E2 - E1
-        if np.random.random() < np.exp(-beta * dE): continue 
+        if dE <= 0 or np.random.random() < np.exp(-beta * dE): continue 
         lattice[i, j, k], lattice[ni, nj, nk] = lattice[ni, nj, nk], lattice[i, j, k]
     assert(np.sum(lattice == 1) == N1 and np.sum(lattice == 2) == N2)
     return energy(lattice, L)
 
 lattice_cpy = deepcopy(lattice)
 
-betas = [.5, 4.]
+betas = [3., 4.]
 lattices = [lattice, lattice_cpy]
-nsweeps = 50
+nsweeps = 1000
 
 configs = [[deepcopy(lattice)], [deepcopy(lattice_cpy)]]
 for b, beta in enumerate(betas):
     es = []
     lattice = lattices[b]
     for _ in tqdm(range(nsweeps)):
-        es.append(sweep(lattice, L, beta))
+        es.append(local_sweep(lattice, L, beta))
         configs[b].append(lattice)
     plt.plot(range(nsweeps), es, label=f"beta={beta:.2f})")
 plt.legend()
@@ -134,7 +157,7 @@ plt.show()
 
 def q(x, rho, rho1, rho2, L):
     N = int(rho * L ** 3)
-    N1 = int(rho1 * L ** 3)
+    N1 = int(rho1 * rho * L ** 3)
     N2 = N - N1
     c0 = rho * (rho1 ** 2 + rho2 ** 2) 
     return ((1/N) * x - c0) / (1 - c0)
@@ -144,18 +167,13 @@ for b, beta in enumerate(betas):
     cs = [1.]
     for i in tqdm(range(1, nsweeps)):
         curr_config = configs[b][i]
-        lat1_s1 = beg_lattice == 1
-        lat2_s1 = curr_config == 1
-        lat1_s2 = beg_lattice == 2
-        lat2_s2 = curr_config == 2
-        s = np.sum(np.logical_and(lat1_s1, lat2_s1) + np.logical_and(lat1_s2, lat2_s2))
-        c = q(s, rho, rho1, rho2, L)
-        cs.append(c)
+        s = np.sum(np.logical_and(beg_lattice == curr_config, beg_lattice > 0))
+        c = q(s, .75, .6, .4, L)
+        cs.append(s)
     plt.plot(.1 + np.array(range(nsweeps)), cs, label=f"beta={beta:.2f})")
 
 plt.legend()
 plt.xscale("log")
 plt.xlabel("MCS / [1]")
 plt.ylabel("C_t / [1]")
-plt.ylim(-.1, 1.1)
 plt.show()
