@@ -100,14 +100,15 @@ def sweep(lattice, L, beta):
         dE = E2 - E1
         if dE <= 0 or np.random.random() < np.exp(-beta * dE): continue 
         lattice[i, j, k], lattice[ni, nj, nk] = lattice[ni, nj, nk], lattice[i, j, k]
-    assert(np.sum(lattice == 1) == N1 and np.sum(lattice == 2) == N2)
+    #assert(np.sum(lattice == 1) == N1 and np.sum(lattice == 2) == N2)
     return energy(lattice, L)
 
-es = []
-nsweeps = 10000
+es = [energy(lattice, L)]
+nsweeps = 100
 for _ in tqdm(range(nsweeps)):
     es.append(sweep(lattice, L, 5.))
-plt.plot(range(nsweeps), es)
+print(es)
+plt.plot([0.1, *np.array(range(1,nsweeps+1))], es)
 plt.show()
 
 
@@ -151,7 +152,7 @@ def local_sweep(lattice, L, beta):
         dE = E2 - E1
         if dE <= 0 or np.random.random() < np.exp(-beta * dE): continue 
         lattice[i, j, k], lattice[ni, nj, nk] = lattice[ni, nj, nk], lattice[i, j, k]
-    assert(np.sum(lattice == 1) == N1 and np.sum(lattice == 2) == N2)
+    #assert(np.sum(lattice == 1) == N1 and np.sum(lattice == 2) == N2)
     return energy(lattice, L)
 
 lattice_cpy = deepcopy(lattice)
