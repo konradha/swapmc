@@ -42,6 +42,14 @@ static inline std::tuple<int, int, int> revert(int s, int L = 30) {
   return {i, j, k};
 }
 
+int logand(int *__restrict lat1, int *__restrict lat2, const int &L)
+{
+    int x = 0;
+    for (int i=0;i<L*L*L;++i)
+        x += (int)(lat1[i] == lat2[i] && lat1[i] > 0);
+    return x;
+}
+
 int build_lattice_diagonal(
     int *grid,  std::vector<std::mt19937> &gens,
     std::vector<std::uniform_int_distribution<>> &indices,const int N, const int num_red, const int num_blue 
@@ -254,6 +262,25 @@ void collect_and_dump(const int &rk, const int &sz, const int &num_threads,
   }
 }
 
+void collect_and_dump_corr(const int &rk, const int &sz, const int &num_threads,
+                      int *__restrict beg_configs,
+                      int *__restrict all_configs,
+                      int *__restrict rank_lattices, const int &padded_N,
+                      const int &L) {
+  MPI_Gather(rank_lattices, padded_N * num_threads, MPI_INT, all_configs,
+             padded_N * num_threads, MPI_INT, 0, MPI_COMM_WORLD);
+  if (rk == 0) {
+    for (int r = 0; r < sz; ++r) {
+      for (int t = 0; t < num_threads; ++t) {
+        int *beg_lattice = beg_configs + (r * num_threads + t) * padded_N; 
+        int *lattice = all_configs + (r * num_threads + t) * padded_N;
+        std::cout << logand(beg_lattice, lattice, L) << " ";  
+      }    
+    }
+    std::cout << "\n";
+  }
+}
+
 void seed(int k) { srand(time(NULL) + k); }
 
 int main(int argc, char **argv) {
@@ -314,8 +341,8 @@ int main(int argc, char **argv) {
 
   const int num_configs = num_threads * sz;
   float *betas = (float *)malloc(sizeof(float) * num_configs);
-  const float beta_min = 2.;
-  const float beta_max = 5.;
+  const float beta_min = 1.;
+  const float beta_max = 3.;
   const float d = (beta_max - beta_min) / num_configs;
   for (int i = 0; i < num_configs; ++i)
     betas[i] = beta_min + i * d;
@@ -342,13 +369,19 @@ int main(int argc, char **argv) {
   MPI_Barrier(MPI_COMM_WORLD);
 
   int *all_configs = nullptr;
+  int *beg_configs = nullptr;
   if (rk == 0)
+  {
     all_configs = (int *)malloc(sizeof(int) * padded_N * sz * num_threads);
+    beg_configs = (int *)malloc(sizeof(int) * padded_N * sz * num_threads);
+  }
 
+  // collect all initial configs
   collect_and_print(rk, sz, num_threads, all_configs, rank_lattices, padded_N,
                     L);
   //collect_and_dump(rk, sz, num_threads, all_configs, rank_lattices, padded_N,
   //L);
+  
 
 
   if (rk == 0) {
@@ -413,8 +446,17 @@ int main(int argc, char **argv) {
 
 
   printer = 1;
-  const int local_nsweeps = 1<<11;
+  const int local_nsweeps = 1<<15;
 
+  // all "equilibrium" configs for us to check decorrelation periodically
+  MPI_Gather(rank_lattices, padded_N * num_threads, MPI_INT, all_configs,
+             padded_N * num_threads, MPI_INT, 0, MPI_COMM_WORLD);
+  if (rk == 0)
+#pragma omp master
+    memcpy(beg_configs, all_configs, sizeof(int) * padded_N * sz * num_threads);    
+
+  collect_and_dump_corr(rk, sz, num_threads, beg_configs, all_configs, rank_lattices,
+                        padded_N, L);
 
 #pragma omp parallel
   for (int i = 1; i <= local_nsweeps + 1; ++i) {
@@ -432,8 +474,10 @@ int main(int argc, char **argv) {
 
 #pragma omp master
     if (i % printer == 0) {
-      collect_and_print(rk, sz, num_threads, all_configs, rank_lattices,
+      collect_and_dump_corr(rk, sz, num_threads, beg_configs, all_configs, rank_lattices,
                         padded_N, L);
+      //collect_and_print(rk, sz, num_threads, all_configs, rank_lattices,
+      //                  padded_N, L);
       //collect_and_dump(rk, sz, num_threads, all_configs, rank_lattices,
       //padded_N,  L);
       printer *= 2;
