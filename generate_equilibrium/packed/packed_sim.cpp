@@ -201,7 +201,7 @@ int main()
 
     uint8_t cpy_lat[L*L*L/4];
     memcpy(cpy_lat, packed_lattice, L*L*L/4); 
-    std::cout << check_cpy(cpy_lat) << ", " << energy() << "\n";
+    //std::cout << check_cpy(cpy_lat) << ", " << energy() << "\n";
     for(int i=0;i<L*L*L; ++i)
     {
         const auto ii = revert_table[3 * i + 0]; 
@@ -213,14 +213,21 @@ int main()
 
    
     int printer = 1;
-    for(int i=0;i<1<<20;++i)
+    for(int i=0;i<1000;++i)
     {
         nonlocal_sweep(beta, generator, indices, uni);
         if(printer == i)
         {
-            std::cout << check_cpy(cpy_lat) << ", " << energy() << "\n";
+            //std::cout << check_cpy(cpy_lat) << ", " << energy() << "\n";
             printer *= 2;
         }
     }
+
+    for(int i=0;i<L*L*L;++i)
+        std::cout << static_cast<int>(get_value_lattice(i)) << " "; 
+    std::cout << "\n";
+
+
+
     return 0;
 }
