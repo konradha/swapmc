@@ -66,12 +66,13 @@ static inline void exchange(int *__restrict grid, const int &N, const int &site,
 #define ONETWO(x) ((x & 1) || (x & 2))
 static inline float local_energy(int *__restrict grid, const int &N,
                                  const int &i, const int &j, const int &k) {
+  const auto tid = omp_get_thread_num();
   const auto site = k + N * (j + N * i);
   if (grid[site] == 0)
     return 0.;
 
   const float connection = grid[site] == 1 ? 3. : 5.;
-  const auto [l, r, u, d, f, b] = nn[site];
+  const auto [l, r, u, d, f, b] = nn[tid][site];
   float current =
       static_cast<float>(ONETWO(grid[u]) + ONETWO(grid[d]) + ONETWO(grid[l]) +
                          ONETWO(grid[r]) + ONETWO(grid[f]) + ONETWO(grid[b]));
@@ -81,9 +82,10 @@ static inline float local_energy(int *__restrict grid, const int &N,
 
 static inline const float nn_energy(int *__restrict lattice, const int N,
                                     const int &i, const int &j, const int &k) {
+  const auto tid = omp_get_thread_num();
   const auto site = k + N * (j + N * i);
   float res = local_energy(lattice, N, i, j, k);
-  const auto nne = revert_neighbor_table[site];
+  const auto nne = revert_neighbor_table[tid][site];
   for (const auto &[m, l, n] : nne)
     res += local_energy(lattice, N, m, l, n);
   return res;
@@ -103,8 +105,8 @@ void fully_nonlocal_sweep(int *__restrict lattice, const int L,
     const int mv = indices[tid](gens[tid]);
     if (lattice[site] == lattice[mv])
       continue;
-    const auto [si, sj, sk] = revert_table[site];
-    const auto [mi, mj, mk] = revert_table[mv];
+    const auto [si, sj, sk] = revert_table[tid][site];
+    const auto [mi, mj, mk] = revert_table[tid][mv];
 
     const float E1 =
         nn_energy(lattice, L, si, sj, sk) + nn_energy(lattice, L, mi, mj, mk);
@@ -127,7 +129,7 @@ void local_sweep(int *__restrict lattice, const int L,
   for (int i = 0; i < L * L * L; ++i) {
     // is this even better than taking modulo?
     const int site = indices[tid](gens[tid]);
-    const auto nns = nn[site];
+    const auto nns = nn[tid][site];
     // the below is equal to: const auto nb  = indices[tid](gens[tid]) % 6;
     // ie. maybe the compiler already sees this but to be safe we hand-code this
     // here
@@ -135,8 +137,8 @@ void local_sweep(int *__restrict lattice, const int L,
     const auto mv = nns[nb]; // pick a neighbor
     if (lattice[site] == lattice[mv])
       continue;
-    const auto [si, sj, sk] = revert_table[site];
-    const auto [mi, mj, mk] = revert_table[mv];
+    const auto [si, sj, sk] = revert_table[tid][site];
+    const auto [mi, mj, mk] = revert_table[tid][mv];
     const float E1 =
         nn_energy(lattice, L, si, sj, sk) + nn_energy(lattice, L, mi, mj, mk);
     exchange(lattice, L, site, mv);
@@ -251,15 +253,21 @@ int main(int argc, char **argv) {
 
   // fix num_threads to 4 to adhere to constraints on Daint
   omp_set_num_threads(4);
-  // allocate global LUTs to enhance computation
-  ::nn = get_nn_list(L);
-  ::revert_table = generate_revert_table(L);
-  ::revert_neighbor_table = generate_neighbor_revert_table(L);
+
+
 
 #pragma omp parallel
   assert(omp_get_num_threads() == 4);
+  const int num_threads = 4; // should check out with NUM_THREADS to have consistency
+  // allocate global LUTs to enhance computation
+  for(int t = 0; t < num_threads; ++t)
+  {
+    ::nn[t] = get_nn_list(L);
+    ::revert_table[t] = generate_revert_table(L);
+    ::revert_neighbor_table[t] = generate_neighbor_revert_table(L);
+  }
 
-  const int num_threads = 4;
+  
 
   int *rank_lattices = nullptr;
 

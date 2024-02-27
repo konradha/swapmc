@@ -3,19 +3,22 @@
 #include <stdlib.h>
 #include <unordered_map>
 
+// fixing number of threads -- adheres to cluster + works locally
+#define NUM_THREADS 4
+
 // global objects defining the lattice graph with periodic boundary conditions
 // using lookup-tables to reduce cycles needed in the sweeps
 
 // global object per rank definining nearest neighbors as indices [0, L^3) ->
 // ([0, L^3))^6
-std::unordered_map<int, std::array<int, 6>> nn;
+std::unordered_map<int, std::array<int, 6>> nn[NUM_THREADS];
 // global object per rank definining mapping from index to triplet [0, L^3) ->
 // [0, L) x [0, L) x [0, L)
-std::unordered_map<int, std::array<int, 3>> revert_table;
+std::unordered_map<int, std::array<int, 3>> revert_table[NUM_THREADS];
 // global object per rank defining reverted nearest neighbors [0, L^3) -> ([0,
 // L) x [0, L) x [0, L))^6
 std::unordered_map<int, std::array<std::array<int, 3>, 6>>
-    revert_neighbor_table;
+    revert_neighbor_table[NUM_THREADS];
 
 void dump_slice(const int *__restrict lattice, const int L, const int i) {
   for (int j = 0; j < L; ++j) {
