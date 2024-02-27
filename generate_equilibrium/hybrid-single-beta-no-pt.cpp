@@ -1,9 +1,3 @@
-/*
- * mpicxx -I. -pedantic -ffast-math -march=native -O3 -Wall -fopenmp
- * -Wunknown-pragmas  -lm -lstdc++ -std=c++17 hybrid-single-beta-no-pt.cpp -o
- * to_hybrid mpirun -np 2 -x OMP_NUM_THREADS=4 to_hybrid 12
- */
-
 #include "maps.h"
 
 #include <algorithm>
