@@ -67,7 +67,7 @@ def q(x):
     return ((1/N) * x - c0) / (1 - c0)
 
 
-nonlocal_power = 14
+nonlocal_power = 10
 local_power = 10
 with Pool() as p:
     args = [(b, nonlocal_power, local_power) for b in betas]
@@ -77,6 +77,8 @@ nn_list = generate_nn_list(L)
 for thread_num, (configs, duration) in enumerate(ret):
     es = []
     data = np.fromstring(configs, dtype=np.int8, sep=' ')
+    with open(f"configs_{betas[thread_num]:.2f}_test.npy", 'wb') as f:
+        np.save(f, data)
     num_configs = data.shape[0] // L ** 3 
     data = data.reshape((num_configs, L, L, L))  
     beg_conf = data[0]
