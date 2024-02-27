@@ -5,17 +5,22 @@
 
 
 
-#define L 20
+#define L 30
 constexpr int lat_size = L * L * L;
 constexpr int lat_size_packed = L * L * L / 4;
 uint8_t  packed_lattice[lat_size_packed];
 int  nearest_neighbors[lat_size * 6];
 int  revert_table[lat_size * 3];
 int  revert_nn_table[lat_size * 3 * 6];
-int  forward_table[L][L][L];
-float local_energies[L * L * L];
-int local_e_update_site[2][7];
-float local_e_update_ey[2][7]; 
+int  forward_table[L][L][L]; 
+
+uint8_t get_value(uint8_t * lattice, const int &s)
+{ 
+    const int idx    = s >> 2; 
+    const int offset = (s & 3) * 2;
+    return (lattice[idx] >> offset) & 3;
+}
+
 
 uint8_t get_value_lattice(const int &i, const int &j, const int &k)
 { 
@@ -136,14 +141,9 @@ void build_forward_table()
   for (int i = 0; i < L; ++i)
     for (int j = 0; j < L; ++j)
       for (int k = 0; k < L; ++k)
-       forward_table[i][j][k] = k + L * (j + i*L); 
+       forward_table[i][j][k] = k + L * (j + i*L);
 }
 
-void build_energies()
-{
-    for(int i=0;i<L*L*L;++i)
-        local_energies[i] = 0.;
-}
 
 void generate_tables()
 {
@@ -151,5 +151,4 @@ void generate_tables()
     generate_revert_table();
     generate_neighbor_revert_table();
     build_forward_table();
-    build_energies();
 }
