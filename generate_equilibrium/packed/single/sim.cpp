@@ -4,8 +4,11 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <iostream>
+#include <memory>
 #include <random>
+#include <string>
 
 void build_lattice_diag(const int &num_particles, const int &num_red,
                         const int &num_blue, std::mt19937 &generator,
@@ -131,16 +134,20 @@ bool check_cpy(uint8_t *lat) {
 }
 
 int main(int argc, char **argv) {
-  if (argc != 4) {
-    std::cout << "run as: ./bin beta nonlocal_power local_power\n";
+  if (argc != 5) {
+    std::cout << "run as: ./bin beta nonlocal_power local_power path-to-output\n";
     return 1;
   }
   const auto arg1 = argv[1];
   const auto arg2 = argv[2];
   const auto arg3 = argv[3];
+  const auto arg4 = argv[4];
   const auto beta = atof(arg1);
   const auto nonlocal_sweeps = atoi(arg2);
   const auto local_sweeps = atoi(arg3);
+  const auto fname = std::string(arg4);
+
+  
 
   const float rho = .75;
   // convenience defs
@@ -157,67 +164,80 @@ int main(int argc, char **argv) {
   generate_tables();
 
   build_lattice_diag(N, N1, N2, generator, indices);
-  // for(int i=0;i<L*L*L;++i)
-  //     std::cout << (int)get_value_lattice(i) << " ";
-  // std::cout << "\n";
-
-  uint8_t cpy_lat[L * L * L / 4];
-  memcpy(cpy_lat, packed_lattice, L * L * L / 4);
-
-  const int nsweeps = 1 << 10;
-  const int max_collect = nsweeps;
-  uint8_t config_collection[max_collect * L * L * L / 4];
-  // copy initial config
-  const int config_size = L * L * L / 4;
-  std::copy(packed_lattice, packed_lattice + config_size, config_collection);
-  int printer = 1;
-  int collecter = 1;
-  int collection_idx = 0;
-  // std::cout << 0 << ", " << energy() << "\n";
-  std::chrono::high_resolution_clock::time_point t1 =
-      std::chrono::high_resolution_clock::now();
+    
+  
+  
+ 
+  
   for (int i = 1; i < (1 << nonlocal_sweeps) + 1; ++i) {
     nonlocal_sweep(beta, generator, indices, uni);
-    // if(printer == i)
-    //{
-    //     std::cout << i << ", " << energy() << "\n";
-    //     printer *= 2;
-    // }
-    // if (collecter == i)
-    //{
-    //     const auto newpos = config_collection + collection_idx * config_size;
-    //     std::copy(packed_lattice, packed_lattice + config_size, newpos);
-    //     collecter += 1;
-    //     collection_idx += 1;
-    // }
   }
-  auto t2 = std::chrono::high_resolution_clock::now();
-  auto duration =
-      std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
-  // std::cout << "Duration: " << duration << " ms" << std::endl;
 
-  for (int i = 1; i < (1 << local_sweeps) + 1; ++i) {
+  const int max_collect = 1 << 10; 
+  uint8_t  *config_collection = (uint8_t *)malloc(sizeof(uint8_t) * max_collect * L * L * L / 4); 
+  const int config_size = L * L * L / 4;
+  std::copy(packed_lattice, packed_lattice + config_size, config_collection); 
+
+  std::basic_filebuf<char> fb;
+  fb.open(arg4, std::ios::out | std::ios::binary);
+  
+  std::ostream os(&fb);
+
+  int collecter = 1;
+  int collecter_repeat = 0;
+  int checkin = 1;
+  int multiplier = 0;
+  std::vector<int> epochs;
+
+  size_t s = 1;
+
+
+  // can be done smartly
+  // outer loop powers (10, 14) (14, 18) (18, 22) ... to ... %10 %100 %1000
+  // inner loop: sweep and check at every %k to save config
+
+  for(; s < (1 << local_sweeps) + 1 && s < (1 << 10) + 1; ++s)
+  {
     local_sweep(beta, generator, indices, uni);
-    // if(printer == i)
-    //{
-    //     std::cout << i << ", " << energy() << "\n";
-    //     printer *= 2;
-    // }
-    if (collecter == i) {
-      const auto newpos = config_collection + collection_idx * config_size;
+    const auto newpos = config_collection + collecter * config_size;
+    std::copy(packed_lattice, packed_lattice + config_size, newpos);
+    collecter += 1;
+    epochs.push_back(s);
+  }
+
+
+  multiplier = 1<<14;
+  checkin *= 10;
+  for(; s < (1 << local_sweeps) + 1 && s < multiplier + 1; ++s)
+  {
+
+    local_sweep(beta, generator, indices, uni);
+    if ( s % checkin == 0)
+    {
+      const auto newpos = config_collection + collecter * config_size;
       std::copy(packed_lattice, packed_lattice + config_size, newpos);
       collecter += 1;
-      collection_idx += 1;
+      epochs.push_back(s);
+    }
+
+    if (collecter >= max_collect)
+    {
+      os.write((char *)config_collection, max_collect * L * L * L / 4);
+      collecter = 0;
+      collecter_repeat++;
     }
   }
 
-  for (int c = 0; c < collection_idx; ++c) {
-    for (int i = 0; i < L * L * L; ++i)
-      std::cout << static_cast<int>(
-                       get_value(config_collection + c * config_size, i))
-                << " ";
-    std::cout << "\n";
-  }
+
+  if (collecter > 0)
+    os.write((char *) config_collection, collecter * L * L * L / 4); 
+  fb.close(); 
+  free(config_collection);
+
+  for(int i=0;i<epochs.size();++i)
+      std::cout << epochs[i] << " ";
+  std::cout << "\n";
+
 
   return 0;
 }
