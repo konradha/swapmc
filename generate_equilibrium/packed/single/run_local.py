@@ -27,17 +27,10 @@ def generate_nn_list(L):
     return d
 
 
-bin_name =  "to_sim"
-betas = np.geomspace(.8, 7., 1 * 8) # factors for hyperthreading
+
+betas = np.geomspace(.5, 2.49, 1 * 8) # factors for hyperthreading
 L = 30
-def run_proc(beta: float, nonlocal_sweeps: int, local_sweeps: int, out_name: str):
-    start = time.time()
-    p = subprocess.Popen([f"./{bin_name}", f"{beta:.2f}", str(nonlocal_sweeps), str(local_sweeps), out_name], stdout=subprocess.PIPE)
-    out, err = p.communicate()
-    p.wait()
-    end = time.time()
-    duration = end - start 
-    return out, duration
+
 
 def local_e(config, i, j, k, nn_list):
     ty = config[i, j, k]
@@ -79,67 +72,55 @@ def q(x):
 
 
 
+bin_name =  "to_sim"
+def run_proc(beta: float):
+    start = time.time()
+    p = subprocess.Popen([f"./{bin_name}", f"{beta:.2f}"], stdout=subprocess.PIPE)
+    out, err = p.communicate()
+    p.wait()
+    end = time.time()
+    duration = end - start 
+    return out, duration
 
-nonlocal_power = 10
-local_power = 14
-# DO: 15 and 21 over night
+
 with Pool() as p:
-    args = [(betas[b], nonlocal_power, local_power, f"L30_{betas[b]:.2f}_nonloc{nonlocal_power}_loc{local_power}.bin") for b in
-            range(len(betas))]
+    args = [[betas[b]] for b in
+            range(len(betas))] 
     ret = p.starmap(run_proc, args)
-    for (epochs, duration) in ret:
-        print(epochs)
-        break
+    
 
 
-#nn_list = generate_nn_list(L)
-#configs_last10 = []
-#m_l = 5
-#for thread_num, (configs, duration) in enumerate(ret):
-#    es = []
-#    data = np.fromstring(configs, dtype=np.int8, sep=' ')
-#    #with open(f"configs_{betas[thread_num]:.2f}_test.npy", 'wb') as f:
-#    #    np.save(f, data)
-#    np.savez_compressed(f"configs_{betas[thread_num]:.2f}_test.npz", data)
-#    num_configs = data.shape[0] // L ** 3 
-#    data = data.reshape((num_configs, L, L, L))  
-#    beg_conf = data[0]
-#    range_test = np.array([0.1, *[2 ** i - 1 for i in range(1, local_power + 1)]])
-#    corr = []
-#    for r in range_test:
-#        r = int(r)
-#        n1 = np.sum(np.logical_and(beg_conf == 1, data[r] == 1))
-#        n2 = np.sum(np.logical_and(beg_conf == 2, data[r] == 2))
-#        corr.append(q(n1 + n2))
-#
-#    configs_last10.append(data[-1 - m_l:-1])
-#        
-#    plt.plot(range_test, corr, label=f"{1/betas[thread_num]:.2f}", color=plt.cm.RdYlBu(thread_num/(len(betas))))
-#plt.xscale("log")
-#plt.legend()
-#plt.xlabel("MCS / [1]")
-#plt.ylabel("C(t;t_w) / [1]")
-#plt.show()
-#
-#configs_last10 = np.array(configs_last10)
-#e_avg = []
-#
-#for b, beta in enumerate(betas):
-#    e, ep = 0, 0
-#    for i in tqdm(range(m_l)):
-#        config = configs_last10[b][i] 
-#        E = (energy(config, nn_list))
-#        e  = e + (E) 
-#    e = e / m_l
-#    e_avg.append(e)
-#
-#cv = []
-#for i in range(1, len(betas)):
-#    T = betas[i]
-#    dT = abs( 1/betas[i] - 1/betas[i - 1])
-#    c_v = (e_avg[i] - e_avg[i - 1]) / (2 * dT * T ** 2)
-#    cv.append(c_v)
-#
-#
-#plt.plot(cv)
-#plt.show()
+nn_list = generate_nn_list(L)
+all_e = []
+for thread_num, (configs, duration) in tqdm(enumerate(ret)):
+    es = []
+    data = np.fromstring(configs, dtype=np.int8, sep=' ') 
+    np.savez_compressed(f"configs_{betas[thread_num]:.2f}_test.npz", data)
+    num_configs = data.shape[0] // L ** 3 
+    data = data.reshape((num_configs, L, L, L))  
+    beg_conf = data[0]
+    # ATTENTION
+    range_test = np.array([0.1, *[2 ** i - 1 for i in range(1, 12 + 1)]])
+    corr = []
+    for r in range_test:
+        r = int(r)
+        n1 = np.sum(np.logical_and(beg_conf == 1, data[r] == 1))
+        n2 = np.sum(np.logical_and(beg_conf == 2, data[r] == 2))
+        corr.append(q(n1 + n2))
+        es.append(energy(data[r], nn_list))
+    all_e.append(es)
+    plt.plot(range_test, corr, label=f"{1/betas[thread_num]:.2f}", color=plt.cm.RdYlBu(thread_num/(len(betas))))
+plt.xscale("log")
+plt.legend()
+plt.xlabel("MCS / [1]")
+plt.ylabel("C(t;t_w) / [1]")
+plt.show()
+
+
+for i, e in enumerate(all_e):
+    plt.plot(range_test, e, label=f"{1/betas[i]:.2f}", color=plt.cm.RdYlBu(i/(len(betas))))
+plt.xscale("log")
+plt.legend()
+plt.xlabel("MCS / [1]")
+plt.ylabel("E / [1]")
+plt.show()

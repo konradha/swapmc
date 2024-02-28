@@ -6,12 +6,13 @@
 
 
 #define L 30
+#define NUM_NN 6
 constexpr int lat_size = L * L * L;
 constexpr int lat_size_packed = L * L * L / 4;
 uint8_t  packed_lattice[lat_size_packed];
-int  nearest_neighbors[lat_size * 6];
+int  nearest_neighbors[lat_size * NUM_NN];
 int  revert_table[lat_size * 3];
-int  revert_nn_table[lat_size * 3 * 6];
+int  revert_nn_table[lat_size * 3 * NUM_NN];
 int  forward_table[L][L][L]; 
 
 uint8_t get_value(uint8_t * lattice, const int &s)
@@ -78,12 +79,12 @@ void build_nn_list() {
         const int d = k + L * (((j + 1) % L) + i * L);
         const int l = (kk % L) + L * (j + i * L);
         const int r = ((k + 1) % L) + L * (j + i * L);
-        nearest_neighbors[6 * site + 0] = f; 
-        nearest_neighbors[6 * site + 1] = b;
-        nearest_neighbors[6 * site + 2] = u; 
-        nearest_neighbors[6 * site + 3] = d;
-        nearest_neighbors[6 * site + 4] = l; 
-        nearest_neighbors[6 * site + 5] = r;
+        nearest_neighbors[NUM_NN * site + 0] = f; 
+        nearest_neighbors[NUM_NN * site + 1] = b;
+        nearest_neighbors[NUM_NN * site + 2] = u; 
+        nearest_neighbors[NUM_NN * site + 3] = d;
+        nearest_neighbors[NUM_NN * site + 4] = l; 
+        nearest_neighbors[NUM_NN * site + 5] = r;
       }
 }
 
@@ -129,7 +130,7 @@ void generate_neighbor_revert_table() {
         {
             for(int nj = 0; nj < 3; ++nj)
             {
-                revert_nn_table[3 * 6 * site + 3 * counter + nj] = ni[nj];
+                revert_nn_table[3 * NUM_NN * site + 3 * counter + nj] = ni[nj];
             }
             counter += 1;
         }
