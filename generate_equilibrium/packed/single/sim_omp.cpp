@@ -146,6 +146,10 @@ int main(int argc, char **argv) {
   }
   const auto arg1 = argv[1];  
   const auto beta = atof(arg1);
+
+#pragma omp parallel
+  assert(omp_get_num_threads() == NUM_THREADS);
+
   
 
   const float rho = .75;
@@ -168,15 +172,12 @@ int main(int argc, char **argv) {
     auto generator = std::mt19937();
     generator.seed(__rdtsc() + tid * tid);
 
-    uint8_t * my_lattice = thread_lattice[tid];
+    //uint8_t * my_lattice = thread_lattice[tid];
     int * my_nn          = thread_nn[tid];
         
 
-    build_lattice_diag(N, N1, N2, generator, indices, tid);
-  
-    
-  
-    int burnin = 1000;
+    build_lattice_diag(N, N1, N2, generator, indices, tid); 
+    int burnin = 100;
     //// > 10^4
     //if (beta <= 2.5) burnin = 1 << 16;
     //// > 10^6
@@ -193,61 +194,171 @@ int main(int argc, char **argv) {
     timing.push_back({tid, t});
   }
 
-
-#pragma omp barrier
-  std::cout << "ENERGY\n";
-  for(int t = 0; t < NUM_THREADS; ++t)
-      std::cout << energy(thread_nn[t], t) << " ";
-  std::cout << "\n";
-
-  std::cout << "RUNTIME\n";
-  for(const auto & [tid, t] : timing)
-      std::cout << t << " ";
-  std::cout << "\n";
   timing.clear();
   
 
-  int nlocal_sweeps = 1000;
-  const int max_collect = 1024; // always a little larger than what we actually collect to, again, avoid false sharing  
-  uint8_t  *config_collection = (uint8_t *)malloc(sizeof(uint8_t) * max_collect * packed_size * NUM_THREADS); 
-  for(int t = 0; t < NUM_THREADS; ++t)
-  {
-    uint8_t * lattice = thread_lattice[t];
-    std::copy(lattice, lattice + packed_size, config_collection + t * max_collect * packed_size);
-  }
+  constexpr int nlocal_sweeps = 1 << 10;
+  constexpr int divider = 1 << 8;
+  // how many configs to save per thread
+  constexpr int max_collect = divider + 8; // always a little larger than what we actually collect to, again, avoid false sharing  
+  //uint8_t  *config_collection = (uint8_t *)malloc(sizeof(uint8_t) * max_collect * packed_size * NUM_THREADS); 
+  
+  uint8_t * config_collection = (uint8_t *)malloc(sizeof(uint8_t) * max_collect * packed_size * NUM_THREADS); 
+  
+  for(int c = 0; c < max_collect * packed_size; ++c)
+      config_collection[c] = static_cast<uint8_t>(0x0);
 
+  
+// finish all memory operations in all threads before continuing
+#pragma omp flush
+  std::cout << "max_collect=" << max_collect <<  "\n"; 
+  std::cout << "packed_size=" << packed_size << "\n";
+  std::cout << max_collect * packed_size * NUM_THREADS << "\n";
+  std::array< double, NUM_THREADS> times = {0.0};
+  constexpr int dist = nlocal_sweeps / divider;
+#pragma omp parallel
+  for (int d = 0; d < divider; ++d)
+  {
+    {
+#pragma omp flush 
+      const auto tid = omp_get_thread_num();
+      auto uni = std::uniform_real_distribution<>(0., 1.);
+      auto indices = std::uniform_int_distribution<>(0, max_idx);
+      auto generator = std::mt19937();
+      generator.seed(__rdtsc() + tid * tid);
+      const uint8_t * my_lattice = thread_lattice[tid];
+      const int * my_nn          = thread_nn[tid]; 
+      auto t = -omp_get_wtime();
+      for (int i = 0; i < dist; ++i)
+      {
+        local_sweep(beta, generator, indices, uni, my_nn, tid);
+      } 
+      t += omp_get_wtime();
+      const auto offset = tid * max_collect + d;
+      uint8_t * copy_spot  = config_collection + offset * packed_size; 
+      std::copy(my_lattice, my_lattice + packed_size, copy_spot);
+  
+
+#pragma omp critical
+      times[tid] += t;
+
+#pragma omp barrier
+    }
+  }
+  
+
+  /*
 #pragma omp parallel
   {
     const auto tid = omp_get_thread_num();
-    uint8_t * my_current_collection_pos = config_collection + tid * max_collect * packed_size;
     auto uni = std::uniform_real_distribution<>(0., 1.);
     auto indices = std::uniform_int_distribution<>(0, max_idx);
     auto generator = std::mt19937();
     generator.seed(__rdtsc() + tid * tid);
     uint8_t * my_lattice = thread_lattice[tid];
     int * my_nn          = thread_nn[tid];
+
     auto t = -omp_get_wtime();
     for (int i = 0; i < nlocal_sweeps; ++i) {
+#pragma omp barrier
+      if (i % 1000)
+        std::copy(my_lattice, my_lattice + packed_size, config_collection + tid * max_collect * packed_size + i * packed_size);
+      float beta = betas[tid];
       local_sweep(beta, generator, indices, uni, my_nn, tid); 
-      std::copy(my_lattice, my_lattice + packed_size, my_current_collection_pos);
-      my_current_collection_pos += packed_size;
+
+//      if (i % 10 == 0)
+//      {
+//          if( tid == 0)
+//          {
+//            const auto rand_idx = indices(generator) % NUM_THREADS;
+//            int tid_trial = betas_idx[rand_idx];
+//            int tid_next  = betas_idx[(rand_idx + 1) % NUM_THREADS];
+//            while(std::abs(tid_trial - tid_next) != 1)
+//                tid_next = betas_idx[indices(generator) % NUM_THREADS];
+//            const float bi = betas[tid_trial];
+//            const float bj = betas[tid_next];
+//            const int ei = energy(my_nn, tid_trial);
+//            const int ej = energy(my_nn, tid_next);
+//            const float dT = bi - bj;
+//            const float dE = ei - ej;
+//            if (dE <= 0 || uni(generator) < std::exp(-dT * dE))
+//            {  
+//              betas[tid_trial] = bj;
+//              betas[tid_next]  = bi;
+//              betas_idx[tid_trial] = tid_next;
+//              betas_idx[tid_next]  = tid_trial;  
+//            } 
+//          }
+//      }
+//
+//      {
+//        if (tid == 0)
+//        {
+//          std::vector<int> ordering;
+//          for(int t = 0; t < NUM_THREADS; ++t)
+//              ordering.push_back(betas_idx[t]);
+//          beta_orderings.push_back(ordering);
+//        }
+//      }
+
+#pragma omp flush
     }
+
+
     t += omp_get_wtime();
 #pragma omp critical
     timing.push_back({tid, t});
+#pragma omp flush
   }
-#pragma omp barrier 
-  std::cout << "ENERGY\n";
-  for(int t = 0; t < NUM_THREADS; ++t)
-      std::cout << energy(thread_nn[t], t) << " ";
+  */
+
+   
+
+ 
+  // + 1 for initial config
+  //for(size_t e = 0; e < nlocal_sweeps; ++e)
+  //{
+  //    auto current_ordering = beta_orderings[e];
+  //    for (const auto & t : current_ordering)
+  //    { 
+  //        uint8_t * current_config = config_collection + t * max_collect * packed_size + e; 
+  //        for(size_t s = 0; s < L*L*L; ++s)
+  //            std::cout << static_cast<short>(get_value(current_config, s)) << " ";
+  //        std::cout << "\n"; 
+  //    }
+  //}
+
+
+  for(size_t t = 0; t < NUM_THREADS; ++t)
+  {
+      
+      for(size_t d = 0; d < divider; ++d)
+      {
+        const auto offset = t * max_collect + d;
+        uint8_t * current_config = config_collection + offset * packed_size;
+        
+        int nred, nblue;
+        nred = nblue = 0;
+        for(int i=0;i<L*L*L;++i)
+        {
+            if (static_cast<short>(get_value(current_config, i)) == 1) nred++;
+            if (static_cast<short>(get_value(current_config, i)) == 2) nblue++;
+        }
+        //if (N1 != nred)  std::cout << "it's red on " << t << " epoch=" << d * (nlocal_sweeps/divider) << "\n";
+        //if (N2 != nblue) std::cout << "it's blue on " << t << " epoch=" << d * (nlocal_sweeps/divider)<< "\n";
+
+        assert(N1 == nred);
+        assert(N2 == nblue);
+        //for(size_t s = 0; s < L*L*L; ++s)
+        //  std::cout << static_cast<short>(get_value(current_config, s)) << " ";
+        //std::cout << "\n";  
+      }
+  }
+
+  std::cout << "RUNTIME, local no PT: ";
+  for(size_t t = 0; t < NUM_THREADS; ++t)
+      std::cout << times[t] << " ";
   std::cout << "\n";
-
-  std::cout << "RUNTIME\n";
-  for(const auto & [tid, t] : timing)
-      std::cout << t << " ";
-  std::cout << "\n";
-
-
 
   free(config_collection);
   return 0;
